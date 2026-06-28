@@ -1,0 +1,41 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>短期記憶</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#101418;--panel:#171D24;--line:#2A333E;--ink:#E8EDF2;--muted:#8C99A8;--plan:#6FB3FF;--sum:#7BD8A8;--code:#F2A65A;--mono:'IBM Plex Mono',monospace;--body:'Zen Kaku Gothic New',sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);padding:22px 16px}
+.wrap{max-width:860px;margin:0 auto}a.back{color:var(--plan);text-decoration:none;font-size:12px;font-family:var(--mono)}
+h1{font-size:19px;margin:6px 0 4px}.sub{color:var(--muted);font-size:12px;font-family:var(--mono);margin-bottom:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:10px}
+h2{font-size:14px;color:var(--sum);margin:18px 0 8px}
+.obj{font-family:var(--mono);font-size:12px;padding:4px 0}.obj.cur{color:var(--plan);font-weight:600}
+.rec{font-family:var(--mono);font-size:12px;border-bottom:1px solid var(--line);padding:7px 0}
+.rec .a{color:var(--code)}.rec .r{color:var(--muted)}
+.step{display:inline-block;background:#0c1320;border:1px solid var(--line);border-radius:5px;padding:2px 8px;margin:2px;font-family:var(--mono);font-size:11px;color:var(--plan)}
+.empty{color:var(--muted);font-family:var(--mono);padding:30px;text-align:center}
+</style></head><body><div class="wrap">
+<a class="back" href="/">← コンソール</a>
+<h1>短期記憶（実行中の作業メモリ）</h1>
+<div class="sub" id="sub">読み込み中…（2秒ごとに自動更新）</div>
+<div id="body"></div>
+<script>
+const $=id=>document.getElementById(id),esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+async function load(){
+ let d;try{d=await(await fetch('/api/short_term')).json();}catch(e){return;}
+ if(!d.active){$('sub').textContent='現在アクティブな実行はありません';
+   $('body').innerHTML='<div class="empty">エージェント実行中にここへ作業中のゴール・目的・直近の行動が表示されます。</div>';return;}
+ $('sub').textContent='実行中：'+esc(d.goal);
+ let h=`<h2>目的リスト（${d.current_index+1}/${d.objectives.length}）</h2><div class="card">`;
+ h+=d.objectives.map((o,i)=>`<div class="obj ${i===d.current_index?'cur':''}">${i===d.current_index?'▶ ':'　'}${i+1}. ${esc(o)}</div>`).join('');
+ h+='</div>';
+ if(d.steps&&d.steps.length){h+='<h2>現在の手順プラン</h2><div class="card">'+d.steps.map(s=>`<span class="step">${esc(s)}</span>`).join('')+'</div>';}
+ h+='<h2>直近の行動（短期メモリ）</h2><div class="card">';
+ h+=d.records.length?d.records.map(r=>{
+   const a=typeof r.action==='object'?JSON.stringify(r.action):r.action;
+   return `<div class="rec"><span class="a">${esc(a)}</span><br><span class="r">→ ${esc(r.result)}</span></div>`;}).join('')
+   :'<span class="r" style="color:var(--muted)">まだ行動なし</span>';
+ h+='</div>';
+ $('body').innerHTML=h;
+}
+load();setInterval(load,2000);
+</script></div></body></html>

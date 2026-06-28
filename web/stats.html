@@ -1,0 +1,122 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>行動分析</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#101418;--panel:#171D24;--line:#2A333E;--ink:#E8EDF2;--muted:#8C99A8;--faint:#5B6877;
+--plan:#6FB3FF;--sum:#7BD8A8;--code:#F2A65A;--fast:#C9A8FF;--mono:'IBM Plex Mono',monospace;--body:'Zen Kaku Gothic New',sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);padding:22px 16px}
+.wrap{max-width:1000px;margin:0 auto}a.back{color:var(--plan);text-decoration:none;font-size:12px;font-family:var(--mono)}
+h1{font-size:19px;margin:6px 0 14px}h2{font-size:14px;color:var(--sum);margin:22px 0 8px;border-bottom:1px solid var(--line);padding-bottom:5px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:10px}
+table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}th{color:var(--muted)}
+.bar{height:9px;background:#0c1320;border-radius:5px;overflow:hidden;display:inline-block;width:120px;vertical-align:middle}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--plan),var(--sum))}
+.prof{display:flex;align-items:center;gap:10px;margin:7px 0;font-family:var(--mono);font-size:12px}
+.prof .nm{width:80px;color:var(--ink)}.prof .v{width:42px;color:var(--sum);text-align:right}
+button{background:var(--sum);color:#06121f;border:none;border-radius:7px;padding:7px 12px;font-weight:600;cursor:pointer;font-family:var(--body)}
+button.ghost{background:#2A333E;color:var(--ink)}
+.hint{color:var(--muted);font-size:11px;font-family:var(--mono)}
+#hist{display:flex;align-items:flex-end;gap:2px;height:90px;border-bottom:1px solid var(--line);padding-bottom:2px;overflow-x:auto}
+#hist .h{min-width:7px;border-radius:2px 2px 0 0;background:var(--plan)}
+.tag{display:inline-block;background:#0c1320;border:1px solid var(--line);border-radius:5px;padding:1px 7px;margin:2px;font-family:var(--mono);font-size:11px}
+</style></head><body><div class="wrap">
+<a class="back" href="/">← コンソールへ戻る</a>
+<h1>📊 行動分析・性格・得意分野</h1>
+
+<h2>⑤ 学習した教訓（使うほど賢くなる）<span class="hint" id="embk"></span></h2>
+<div class="card" id="lessons"><span class="hint">まだ教訓がありません。目的を完了すると自己評価して蓄積されます。</span></div>
+
+<h2>⑤-b 習得したスキル（再利用される成功手順）
+  <a href="#" onclick="consolidate();return false" style="font-size:11px;color:var(--code);font-family:var(--mono);margin-left:8px">🧹 記憶整理を実行</a></h2>
+<div class="card" id="skills"><span class="hint">まだスキルがありません。目的を高評価で達成すると手順がスキル化されます。</span></div>
+
+<h2>④ エージェントの性格プロファイル</h2>
+<div class="card" id="persona"><span class="hint">読み込み中…</span></div>
+
+<h2>⑥ トークン消費（プロバイダ別の概算）</h2>
+<div class="card" id="budget"><span class="hint">まだ呼び出しがありません。</span></div>
+
+<h2>① モデルの得意分野（役割×モデルの成功率・速度）</h2>
+<div class="card"><div id="spec"><span class="hint">まだデータがありません。実行すると蓄積されます。</span></div></div>
+
+<h2>② 役割ごとの最適モデル提案</h2>
+<div class="card">
+ <div id="recommend"><span class="hint">—</span></div>
+ <div style="margin-top:10px"><button onclick="applyRec()">この提案をルートに適用</button>
+  <span class="hint" id="applied"></span></div>
+</div>
+
+<h2>③ 行動履歴（直近）</h2>
+<div class="card"><div id="hist"></div>
+ <div class="hint" id="histlegend" style="margin-top:6px"></div></div>
+
+<div style="margin-top:14px"><button class="ghost" onclick="clearStats()">統計を全消去</button></div>
+
+<script>
+const $=id=>document.getElementById(id),esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const KIND_COLOR={action:'#6FB3FF',duplicate:'#F2A65A',loop_detected:'#FF8B9E',judge:'#7BD8A8',objective_giveup:'#C9A8FF',action_error:'#FF8B9E',final_report:'#7BD8A8'};
+async function load(){
+ const lz=await(await fetch('/api/lessons')).json();
+ $('embk').textContent=' ｜ ベクトル: '+lz.embed_backend;
+ if(lz.lessons.length){
+  $('lessons').innerHTML=lz.lessons.map(l=>
+   `<div style="margin:5px 0;font-size:13px">💡 ${esc(l.lesson)} <span class="hint">(${esc(l.goal||'')} / 評価${l.score})</span></div>`).join('');
+ }
+ try{const sk=await(await fetch('/api/skills')).json();
+  if(sk.skills&&sk.skills.length){
+   $('skills').innerHTML=sk.skills.map(s=>
+    `<div style="margin:7px 0;font-size:13px">🎓 <b>${esc(s.name)}</b> <span class="hint">(${s.uses}回再利用)</span><br>
+     <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${esc((s.steps||[]).join(' → '))}</span></div>`).join('');
+  }
+ }catch(e){}
+ const d=await(await fetch('/api/stats')).json();
+ // ⑥ トークン消費
+ try{const b=await(await fetch('/api/budget')).json();
+  const tot=b.totals||{};const keys=Object.keys(tot);
+  if(keys.length)$('budget').innerHTML='<table><tr><th>プロバイダ</th><th>呼び出し</th><th>入力tok</th><th>出力tok</th></tr>'+
+    keys.map(k=>`<tr><td>${esc(k)}</td><td>${tot[k].calls}</td><td>${tot[k].tokens_in}</td><td>${tot[k].tokens_out}</td></tr>`).join('')+'</table>';
+ }catch(e){}
+ // ④ 性格
+ const p=d.personality.profile, t=d.personality.totals;
+ $('persona').innerHTML=Object.entries(p).map(([k,v])=>
+  `<div class="prof"><span class="nm">${esc(k)}</span><span class="bar"><i style="width:${v}%"></i></span><span class="v">${v}</span></div>`).join('')
+  +`<div class="hint" style="margin-top:8px">総行動 ${t.actions} ／ 重複 ${t.duplicates} ／ ループ ${t.loops} ／ 諦め ${t.giveups} ／ エラー ${t.errors}</div>`;
+ // ① 得意分野
+ const sp=d.specialties;
+ if(!sp.length){$('spec').innerHTML='<span class="hint">まだデータがありません。</span>';}
+ else{sp.sort((a,b)=>b.success_rate-a.success_rate||a.avg_ms-b.avg_ms);
+  $('spec').innerHTML='<table><tr><th>役割</th><th>プロバイダ</th><th>モデル</th><th>成功率</th><th>平均ms</th><th>回数</th></tr>'+
+   sp.map(s=>`<tr><td>${esc(s.role)}</td><td>${esc(s.provider)}</td><td>${esc(s.model)}</td>
+    <td>${Math.round(s.success_rate*100)}%</td><td>${s.avg_ms}</td><td>${s.calls}</td></tr>`).join('')+'</table>';}
+ // ② 提案
+ const rec=d.recommend, roles=Object.keys(rec);
+ $('recommend').innerHTML=roles.length?roles.map(r=>{
+   const top=rec[r][0];
+   return `<div style="margin:4px 0;font-family:var(--mono);font-size:12px">
+    <b style="color:var(--plan)">${esc(r)}</b> → ${esc(top.provider)}/${esc(top.model)}
+    <span class="hint">(成功率${Math.round(top.success_rate*100)}% ${top.avg_ms}ms)</span></div>`;}).join('')
+   :'<span class="hint">提案できるデータがまだありません。</span>';
+ // ③ 履歴
+ const h=await(await fetch('/api/history')).json();
+ $('hist').innerHTML=h.history.map(e=>{
+   const col=KIND_COLOR[e.kind]||'#5B6877';
+   return `<div class="h" style="height:${e.kind==='action'?60:30}px;background:${col}" title="${esc(e.kind)} ${esc(e.detail)}"></div>`;}).join('');
+ const kinds=[...new Set(h.history.map(e=>e.kind))];
+ $('histlegend').innerHTML=kinds.map(k=>`<span class="tag" style="border-color:${KIND_COLOR[k]||'#5B6877'}">${esc(k)}</span>`).join('');
+}
+async function applyRec(){
+ const r=await(await fetch('/api/apply_recommend',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
+ $('applied').textContent='適用: '+Object.entries(r.applied).map(([k,v])=>`${k}=${v[1]}`).join(', ');
+}
+async function consolidate(){
+ if(!confirm('記憶整理を実行しますか？（重複した記憶・教訓を削除します）'))return;
+ const r=await(await fetch('/api/consolidate',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
+ alert(`記憶整理完了: 重複記憶${r.removed_duplicates||0}件・重複教訓${r.removed_lessons||0}件を削除`);
+ load();
+}
+async function clearStats(){if(!confirm('統計を全消去しますか？'))return;
+ await fetch('/api/stats_clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});load();}
+load();
+</script></div></body></html>

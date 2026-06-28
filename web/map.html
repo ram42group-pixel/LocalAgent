@@ -1,0 +1,130 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>役割マップ</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#101418;--panel:#171D24;--line:#2A333E;--ink:#E8EDF2;--muted:#8C99A8;--faint:#5B6877;
+--plan:#6FB3FF;--sum:#7BD8A8;--code:#F2A65A;--fast:#C9A8FF;--secure:#FF8B9E;--fb:#8C99A8;
+--mono:'IBM Plex Mono',monospace;--body:'Zen Kaku Gothic New',sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);padding:20px 16px}
+.wrap{max-width:1000px;margin:0 auto}
+a.back{color:var(--plan);text-decoration:none;font-size:12px;font-family:var(--mono)}
+h1{font-size:19px;margin:6px 0 2px}.sub{color:var(--muted);font-size:12px;font-family:var(--mono);margin-bottom:14px}
+.mapwrap{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:6px}
+#map{width:100%;height:auto;display:block}
+.rnode{cursor:pointer}
+.rnode rect{fill:#1D252E;stroke-width:1.6;transition:filter .2s,transform .2s}
+.rnode.on rect{filter:drop-shadow(0 0 12px var(--c,#fff));stroke-width:2.8}
+.rnode.on .model{fill:var(--ink)}
+.rnode:hover rect{filter:brightness(1.25)}
+.rnode .title{font-family:var(--body);font-weight:700;font-size:13px;fill:var(--ink)}
+.rnode .model{font-family:var(--mono);font-size:10px;fill:var(--muted)}
+.rnode .role{font-family:var(--mono);font-size:8.5px;fill:var(--faint)}
+.center rect{fill:#11161d;stroke:var(--ink)}
+.center .title{font-family:var(--body);font-weight:700;font-size:13px;fill:var(--ink)}
+.center .role{font-family:var(--mono);font-size:8.5px;fill:var(--faint)}
+.edge{fill:none;stroke-width:1.6}
+.mnode circle{fill:#161c23;stroke:var(--sum);stroke-dasharray:3 3}
+.mnode text{font-family:var(--mono);fill:var(--muted)}
+#pop{position:absolute;display:none;z-index:20;background:#0d1116;border:1px solid var(--line);
+border-radius:10px;padding:10px;width:230px;box-shadow:0 8px 28px #000a}
+#pop h4{margin:0 0 7px;font-size:12px}
+#pop select{width:100%;background:#0d1116;color:var(--ink);border:1px solid var(--line);
+border-radius:6px;padding:5px 6px;font-family:var(--mono);font-size:11px;margin-bottom:6px}
+#pop .x{position:absolute;top:6px;right:9px;color:var(--muted);cursor:pointer;font-size:13px}
+</style></head><body><div class="wrap">
+<a class="back" href="/">← コンソールへ戻る</a>
+<h1>役割マップ</h1>
+<div class="sub">ノードを押してモデルを差し替え。記憶ノードを押すと中身（別ページ）へ。</div>
+<div class="mapwrap">
+<svg id="map" viewBox="0 0 880 580">
+ <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="6.5" refY="3.5" orient="auto">
+ <path d="M0,0 L8,3.5 L0,7 z" fill="#8C99A8"/></marker></defs>
+ <line class="edge" stroke="#6FB3FF" x1="440" y1="250" x2="440" y2="118" marker-end="url(#ar)"/>
+ <line class="edge" stroke="#7BD8A8" x1="370" y1="262" x2="175" y2="150" marker-end="url(#ar)"/>
+ <line class="edge" stroke="#C9A8FF" x1="370" y1="300" x2="175" y2="408" marker-end="url(#ar)"/>
+ <line class="edge" stroke="#F2A65A" x1="510" y1="300" x2="700" y2="408" marker-end="url(#ar)"/>
+ <line class="edge" stroke="#7BD8A8" stroke-dasharray="5 4" x1="415" y1="310" x2="360" y2="488" opacity=".45"/>
+ <line class="edge" stroke="#7BD8A8" stroke-dasharray="5 4" x1="465" y1="310" x2="540" y2="488" opacity=".45"/>
+ <g class="center"><rect x="365" y="250" width="150" height="60" rx="10"/>
+  <text x="440" y="278" text-anchor="middle" class="title">エージェント</text>
+  <text x="440" y="296" text-anchor="middle" class="role">orchestration</text></g>
+ <g class="mnode" style="cursor:pointer" onclick="window.open('/shortterm','_blank')">
+  <circle cx="345" cy="500" r="34"/>
+  <text x="345" y="497" text-anchor="middle" font-size="11">短期記憶</text>
+  <text x="345" y="512" text-anchor="middle" font-size="9">押すと作業メモリ</text></g>
+ <g class="mnode" style="cursor:pointer" onclick="window.open('/galaxy','_blank')">
+  <circle cx="555" cy="500" r="34"/>
+  <text x="555" y="497" text-anchor="middle" font-size="11">長期記憶</text>
+  <text x="555" y="512" text-anchor="middle" font-size="9">押すと銀河へ</text></g>
+ <g id="nodes"></g>
+</svg>
+<div id="pop"><span class="x" onclick="closePop()">✕</span>
+ <h4 id="pop-title"></h4><select id="pop-prov"></select><select id="pop-model"></select>
+</div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const NODES={
+ plan :{title:"計画者",  role:"system.txt→task", c:"#6FB3FF", x:330,y:54 ,w:220,h:64},
+ summary:{title:"要約者",role:"assistant.txt",    c:"#7BD8A8", x:30 ,y:118,w:210,h:64},
+ judge:{title:"判定/修復",role:"judge: JSON修復", c:"#C9A8FF", x:30 ,y:376,w:210,h:64},
+ goal :{title:"目標設計",role:"goal.txt→分解",    c:"#6FB3FF", x:560,y:118,w:210,h:64},
+ narrator:{title:"実況ナレーター",role:"実況コメント", c:"#F2A65A", x:330,y:300,w:210,h:64},
+ explainer:{title:"ログ解説",role:"ログを噛み砕く", c:"#FF8B9E", x:560,y:376,w:210,h:64},
+};
+let ROUTES={}, PROVIDERS=[];
+function drawNodes(){const g=$('nodes');g.innerHTML='';
+ for(const role in NODES){const n=NODES[role];const cur=(ROUTES[role]&&ROUTES[role][0])||['',''];
+  g.insertAdjacentHTML('beforeend',
+   `<g class="rnode" id="nd-${role}" style="--c:${n.c}" onclick="openPop('${role}',event)">
+     <rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="10" stroke="${n.c}"/>
+     <text class="title" x="${n.x+n.w/2}" y="${n.y+24}" text-anchor="middle">${n.title}
+      <tspan class="role" dx="6">${role}</tspan></text>
+     <text class="model" id="mn-${role}" x="${n.x+n.w/2}" y="${n.y+46}" text-anchor="middle">▶ ${cur[0]} / ${cur[1]}</text>
+   </g>`);}}
+async function loadRoles(){const d=await(await fetch('/api/roles')).json();
+ ROUTES=d.routes;PROVIDERS=d.providers;drawNodes();}
+let popRole=null;
+async function openPop(role,ev){popRole=role;const cur=(ROUTES[role]&&ROUTES[role][0])||['',''];
+ $('pop-title').textContent=NODES[role].title+' のモデルを選択';
+ $('pop-prov').innerHTML=PROVIDERS.map(p=>`<option ${p===cur[0]?'selected':''}>${p}</option>`).join('');
+ await fillModels($('pop-prov').value,cur[1]);
+ $('pop-prov').onchange=()=>fillModels($('pop-prov').value,'');
+ $('pop-model').onchange=saveRoute;
+ const pop=$('pop'),box=$('map').getBoundingClientRect();pop.style.display='block';
+ pop.style.left=Math.min(ev.clientX-box.left,box.width-240)+'px';pop.style.top=(ev.clientY-box.top+12)+'px';}
+function closePop(){$('pop').style.display='none';popRole=null;}
+async function fillModels(prov,sel){$('pop-model').innerHTML='<option>取得中…</option>';
+ const r=await(await fetch('/api/models?provider='+prov)).json();
+ const ms=r.models&&r.models.length?r.models:['(取得失敗:'+(r.error||'?')+')'];
+ $('pop-model').innerHTML=ms.map(m=>`<option ${m===sel?'selected':''}>${m}</option>`).join('');}
+async function saveRoute(){const prov=$('pop-prov').value,model=$('pop-model').value;
+ const r=await(await fetch('/api/route',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({role:popRole,provider:prov,model})})).json();
+ ROUTES=r.routes;$('mn-'+popRole).textContent=`▶ ${prov} / ${model}`;}
+document.addEventListener('click',e=>{const pop=$('pop');
+ if(pop.style.display==='block'&&!pop.contains(e.target)&&!e.target.closest('.rnode'))closePop();});
+// ---- 実行中モデルの発光（コンソールの実行をミラー購読） ----
+function nodeGlow(role,on){const n=$('nd-'+role);if(!n)return;
+ if(on)n.classList.add('on');else setTimeout(()=>n.classList.remove('on'),250);}
+let curRun=null,es=null,failedRun=null;
+async function watch(){
+ try{const d=await(await fetch('/api/current_run')).json();
+  // 新しいrunだけ購読。失敗した(=終了済み等)run_idは再購読しない（再接続ループ防止）。
+  if(d.run_id&&d.run_id!==curRun&&d.run_id!==failedRun){curRun=d.run_id;subscribe(curRun);}}catch(e){}
+}
+function subscribe(rid){
+ if(es)es.close();
+ es=new EventSource('/api/subscribe?run_id='+rid);
+ es.onmessage=ev=>{const m=JSON.parse(ev.data);const p=m.payload||{};
+  if(m.event==='try'){nodeGlow(p.role,true);const t=$('mn-'+p.role);if(t&&p.model)t.textContent=`▶ ${p.provider} / ${p.model}`;}
+  if(m.event==='recv'||m.event==='limit'||m.event==='error')nodeGlow(p.role,false);
+  if(m.event==='flow'&&p.type==='run_done'){es.close();es=null;curRun=null;}};
+ // エラー時は閉じるだけ。curRunは残し、このrun_idを失敗扱いにして再購読ループを防ぐ。
+ es.onerror=()=>{if(es){es.close();es=null;}failedRun=rid;};
+}
+setInterval(watch,1500); watch();
+loadRoles();
+</script></div></body></html>

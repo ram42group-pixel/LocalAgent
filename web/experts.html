@@ -1,0 +1,183 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ツール専門家の設定</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#101418;--panel:#171D24;--line:#2A333E;--ink:#E8EDF2;--muted:#8C99A8;--faint:#5B6877;
+--plan:#6FB3FF;--sum:#7BD8A8;--fast:#C9A8FF;--mono:'IBM Plex Mono',monospace;--body:'Zen Kaku Gothic New',sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);padding:22px 16px}
+.wrap{max-width:1000px;margin:0 auto}a.back{color:var(--plan);text-decoration:none;font-size:12px;font-family:var(--mono)}
+h1{font-size:19px;margin:6px 0 4px}
+.sub{color:var(--muted);font-size:12px;margin-bottom:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:10px}
+.row1{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tname{font-family:var(--mono);font-weight:600;font-size:14px;min-width:130px;color:var(--sum)}
+select,input,textarea{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-family:var(--mono);font-size:12px}
+textarea{width:100%;resize:vertical;margin-top:6px}
+.lbl{font-size:11px;color:var(--muted);font-family:var(--mono)}
+.saved{font-size:11px;color:var(--sum);font-family:var(--mono);opacity:0;transition:opacity .3s}
+.saved.show{opacity:1}
+button.reset{background:#1e2530;color:var(--fast);border:1px solid var(--line);border-radius:6px;padding:5px 11px;font-size:11px;cursor:pointer;font-family:var(--mono)}
+.topbar{display:flex;gap:14px;align-items:center;margin-bottom:14px}
+</style></head>
+<body><div class="wrap">
+<a class="back" href="/">← コンソールに戻る</a>
+<h1>ツール専門家の設定</h1>
+<div class="sub">各ツールに「専門家LLM」を割り当てます。プロバイダとモデルはリストから選択。
+クラウドLLMの専門家は並列実行されます。プロバイダを変えるとモデルはそのプロバイダの既定に自動設定されます。</div>
+<div class="topbar">
+  <button class="reset" onclick="autoAssign()">🤖 名前/検索で自動割り当て（速い）</button>
+  <button class="reset" onclick="resetAll()">既定に戻す</button>
+  <a href="/benchmark" style="color:var(--sum);font-size:12px;font-family:var(--mono)">🧪 モデル評価ページ →</a>
+  <span class="lbl" id="status"></span>
+</div>
+<div id="list"><div class="card"><span style="color:var(--muted)">読み込み中…</span></div></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/"/g,'&quot;').replace(/</g,'&lt;');
+let PM={};          // providers_models
+const PROVIDERS=['','ollama','groq','cerebras','open_router','google_studio','mistral'];
+
+async function load(){
+ const d=await(await fetch('/api/experts_config')).json();
+ PM=d.providers_models||{};
+ const exps=d.experts||{};
+ const tools=d.tools||[];
+ $('list').innerHTML=tools.map(t=>card(t, exps[t]||{})).join('');
+ // 各ツールのモデルリストを初期化
+ tools.forEach(t=>fillModels(t, (exps[t]||{}).model||''));
+}
+
+function card(tool, e){
+ const provOpts=PROVIDERS.map(p=>`<option value="${p}" ${p===e.provider?'selected':''}>${p||'(LLMなし)'}</option>`).join('');
+ return `<div class="card">
+   <div class="row1">
+     <span class="tname">${tool}</span>
+     <span class="lbl">プロバイダ</span>
+     <select id="p_${tool}" onchange="onProviderChange('${tool}')">${provOpts}</select>
+     <span class="lbl">モデル</span>
+     <select id="m_${tool}" onchange="onModelSelect('${tool}')" style="min-width:200px"></select>
+     <input id="mi_${tool}" placeholder="モデル名を入力" style="min-width:180px;display:none"
+            onchange="save('${tool}')" oninput="save('${tool}')">
+     <span class="saved" id="sv_${tool}">✓ 保存</span>
+   </div>
+   <textarea id="per_${tool}" rows="2" placeholder="専門家の役割・観点（persona）" onchange="save('${tool}')">${esc(e.persona||'')}</textarea>
+ </div>`;
+}
+
+const MANUAL='__manual__';   // ドロップダウンの「手動入力」選択肢の値
+
+function fillModels(tool, selected){
+ const prov=$('p_'+tool).value;
+ const sel=$('m_'+tool);
+ const inp=$('mi_'+tool);
+ if(!prov){ sel.innerHTML='<option value="">—</option>'; sel.disabled=true; inp.style.display='none'; return; }
+ sel.disabled=false;
+ const info=PM[prov]||{models:[],default:''};
+ const models=info.models||[];
+ const inList = selected && models.includes(selected);
+ const opts=[...models];
+ // リストに無い選択中モデルは「手動入力」扱い（クラウド同名や未掲載モデル対応）
+ let h=opts.map(m=>{
+   const isDef=m===info.default;
+   return `<option value="${esc(m)}" ${m===selected?'selected':''}>${esc(m)}${isDef?' （既定）':''}</option>`;
+ }).join('');
+ // 末尾に「手動入力」選択肢
+ const manualSel = selected && !inList;
+ h+=`<option value="${MANUAL}" ${manualSel?'selected':''}>✏ 手動入力…</option>`;
+ sel.innerHTML=h;
+ if(manualSel){
+   inp.style.display='';
+   inp.value=selected||'';
+ }else{
+   inp.style.display='none';
+   if(!selected && info.default) sel.value=info.default;
+ }
+}
+
+function onModelSelect(tool){
+ const sel=$('m_'+tool), inp=$('mi_'+tool);
+ if(sel.value===MANUAL){
+   inp.style.display='';
+   inp.focus();
+ }else{
+   inp.style.display='none';
+ }
+ save(tool);
+}
+
+function onProviderChange(tool){
+ const prov=$('p_'+tool).value;
+ const def=(PM[prov]||{}).default||'';
+ fillModels(tool, def);   // プロバイダ変更→そのプロバイダの既定モデルに
+ save(tool);
+}
+
+async function save(tool){
+ const sel=$('m_'+tool);
+ // 「手動入力」選択時は入力欄の値を、それ以外はドロップダウンの値を使う
+ const model = (sel.value===MANUAL) ? ($('mi_'+tool).value||'').trim() : sel.value;
+ const body={tool, provider:$('p_'+tool).value, model, persona:$('per_'+tool).value};
+ await fetch('/api/expert',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ const sv=$('sv_'+tool); sv.classList.add('show'); setTimeout(()=>sv.classList.remove('show'),1200);
+}
+
+async function benchmark(){
+ const sources=[];
+ if($('src_builtin').checked) sources.push('builtin');
+ if($('src_llm').checked) sources.push('llm');
+ if($('src_public').checked) sources.push('public');
+ if(!sources.length){ alert('出題元を1つ以上選んでください'); return; }
+ if(!confirm('各ollamaモデルに小問を解かせ、実測スコアで割り当てます。\n出題元: '+sources.join(', ')+'\nモデルを1つずつロードするため時間がかかります。実行しますか？'))return;
+ $('status').textContent='実測ベンチ実行中…（モデルを1つずつ評価。完了までお待ちください）';
+ try{
+  const r=await(await fetch('/api/benchmark_models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sources})})).json();
+  if(!r.ok){ $('status').textContent='失敗: '+(r.error||''); return; }
+  let lines=[`実測ベンチ完了（${r.models.length}モデル）`];
+  for(const m of r.models){
+    const s=r.scores[m]||{}; const ms=r.speeds_ms[m]||0;
+    lines.push(`  ${m}: 推論${s.reason??'-'} コード${s.code??'-'} ｾｷｭﾘﾃｨ${s.security??'-'} 速度${ms}ms`);
+  }
+  $('status').innerHTML=lines.join('<br>');
+  load();
+ }catch(e){ $('status').textContent='エラー: '+e; }
+}
+
+async function editQuestions(){
+ const d=await(await fetch('/api/bench_questions')).json();
+ const txt=prompt('ベンチ問題(JSON)を編集。形式: {"分野":[{"q":"問題","answer":["正解"]}]}\n分野: reason/code/security/speed',
+                  JSON.stringify(d.questions||{},null,1));
+ if(txt===null) return;
+ try{
+  const parsed=JSON.parse(txt);
+  const r=await(await fetch('/api/bench_questions_save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({questions:parsed})})).json();
+  $('status').textContent=r.ok?'問題を保存しました':'保存失敗';
+ }catch(e){ alert('JSON形式が不正です: '+e); }
+}
+
+async function resetAll(){
+ if(!confirm('全ツールの専門家を既定設定に戻しますか？'))return;
+ await fetch('/api/experts_reset',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+ $('status').textContent='既定に戻しました';
+ load();
+ setTimeout(()=>$('status').textContent='',2000);
+}
+
+async function autoAssign(){
+ if(!confirm('ollamaのインストール済みモデルを特性で自動割り当てします。\n計画/判定などのコア役割と、各ツール専門家のプロバイダがollamaに設定されます。よろしいですか？'))return;
+ $('status').textContent='モデルを解析中…（未知モデルは検索で調査）';
+ try{
+  const r=await(await fetch('/api/auto_assign_models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({use_search:true})})).json();
+  if(!r.ok){ $('status').textContent='失敗: '+(r.error||''); return; }
+  let msg=`割り当て完了（${r.models.length}モデル）`;
+  if(r.searched&&r.searched.length) msg+=` / 検索調査: ${r.searched.join(', ')}`;
+  $('status').textContent=msg;
+  load();   // 反映を再読込
+ }catch(e){ $('status').textContent='エラー: '+e; }
+ setTimeout(()=>{const s=$('status'); if(s.textContent.startsWith('割り当て完了')) s.textContent='';},6000);
+}
+
+load();
+</script>
+</body></html>

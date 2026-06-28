@@ -1,0 +1,71 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ツール管理</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#101418;--panel:#171D24;--line:#2A333E;--ink:#E8EDF2;--muted:#8C99A8;--faint:#5B6877;
+--plan:#6FB3FF;--sum:#7BD8A8;--code:#F2A65A;--fast:#C9A8FF;--mono:'IBM Plex Mono',monospace;--body:'Zen Kaku Gothic New',sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);padding:22px 16px}
+.wrap{max-width:1000px;margin:0 auto}a.back{color:var(--plan);text-decoration:none;font-size:12px;font-family:var(--mono)}
+h1{font-size:19px;margin:6px 0 4px}h2{font-size:14px;color:var(--sum);margin:20px 0 8px;border-bottom:1px solid var(--line);padding-bottom:5px}
+.sub{color:var(--muted);font-size:12px;margin-bottom:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:10px}
+.tool{display:flex;flex-direction:column;gap:8px}
+.row1{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tname{font-family:var(--mono);font-weight:600;font-size:14px;min-width:130px}
+.tdesc{color:var(--muted);font-size:11px;flex:1;min-width:200px}
+select,input,textarea{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-family:var(--mono);font-size:12px}
+textarea{width:100%;resize:vertical}
+.tag{font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:10px}
+.on{background:#16351f;color:#7BD8A8}.off{background:#3a1e1e;color:#ff9b9b}
+.sw{position:relative;width:42px;height:22px;flex-shrink:0}
+.sw input{display:none}
+.sl{position:absolute;inset:0;background:#3a1e1e;border-radius:22px;cursor:pointer;transition:.2s}
+.sl:before{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+.sw input:checked+.sl{background:#16351f}
+.sw input:checked+.sl:before{transform:translateX(20px)}
+.args{font-family:var(--mono);font-size:10px;color:var(--faint)}
+.lbl{font-size:11px;color:var(--muted);font-family:var(--mono)}
+</style></head>
+<body><div class="wrap">
+<a class="back" href="/">← コンソールに戻る</a>
+<h1>ツール管理</h1>
+<div class="sub">各ツールの有効/無効を切り替えます。無効にするとエージェントのツール一覧から除外されます。
+新しいツールを追加すると自動でここに表示されます。　
+<a href="/experts" style="color:var(--fast)">🤖 ツール専門家（LLM割り当て）の設定 →</a></div>
+<div id="list"><div class="card"><span style="color:var(--muted)">読み込み中…</span></div></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+
+async function load(){
+ const d=await(await fetch('/api/tools_config')).json();
+ $('list').innerHTML=d.tools.map(t=>card(t)).join('');
+}
+
+function card(t){
+ const args=Object.entries(t.args||{}).map(([k,v])=>`${k}`).join(', ');
+ const e=t.expert||{};
+ const expinfo=(e.provider)?`<div class="lbl" style="color:var(--fast)">専門家LLM: ${e.provider}${e.model?(' / '+e.model):''}</div>`:'';
+ return `<div class="card tool">
+   <div class="row1">
+     <label class="sw"><input type="checkbox" ${t.enabled?'checked':''} onchange="toggle('${t.name}',this.checked)"><span class="sl"></span></label>
+     <span class="tname">${t.name}</span>
+     <span class="tag ${t.enabled?'on':'off'}" id="tag_${t.name}">${t.enabled?'有効':'無効'}</span>
+     <span class="tdesc">${t.description||''}</span>
+   </div>
+   <div class="args">引数: ${args||'なし'}</div>
+   ${expinfo}
+ </div>`;
+}
+
+async function toggle(tool,enabled){
+ await fetch('/api/tool_enable',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({tool,enabled})});
+ const tag=$('tag_'+tool);
+ if(tag){tag.textContent=enabled?'有効':'無効';tag.className='tag '+(enabled?'on':'off');}
+}
+
+load();
+</script>
+</body></html>

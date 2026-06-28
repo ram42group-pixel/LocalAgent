@@ -1,0 +1,91 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>攻撃グラフ</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--line:#283039;--ink:#E8EDF2;--muted:#8C99A8;
+--crit:#ff6b6b;--high:#ff9f43;--med:#feca57;--low:#7BD8A8;--cred:#C9A8FF;--plan:#6FB3FF;
+--mono:'IBM Plex Mono',monospace;--body:'Zen Kaku Gothic New',sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);padding:20px 16px}
+.wrap{max-width:1050px;margin:0 auto}a.back{color:var(--plan);text-decoration:none;font-size:12px;font-family:var(--mono)}
+h1{font-size:19px;margin:6px 0}h2{font-size:14px;color:var(--plan);margin:18px 0 8px;border-bottom:1px solid var(--line);padding-bottom:5px}
+.sub{color:var(--muted);font-size:12px;margin-bottom:12px}
+.bar{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 14px;font-family:var(--mono);font-size:12px}
+.stat b{font-size:18px;color:var(--ink)}
+.host{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:12px}
+.hip{font-family:var(--mono);font-weight:600;font-size:15px;color:var(--plan)}
+.hos{color:var(--muted);font-size:11px;margin-left:8px}
+.svc{font-family:var(--mono);font-size:12px;color:var(--ink);margin:3px 0 3px 12px}
+.vuln{font-family:var(--mono);font-size:12px;margin:3px 0 3px 12px;padding:3px 8px;border-radius:6px;display:inline-block}
+.sev-CRITICAL{background:#3a1722;color:var(--crit)}.sev-HIGH{background:#3a2517;color:var(--high)}
+.sev-MEDIUM{background:#3a3517;color:var(--med)}.sev-LOW,.sev-{background:#16351f;color:var(--low)}
+.cred{font-family:var(--mono);font-size:12px;color:var(--cred);margin:3px 0 3px 12px}
+.path{background:var(--panel);border-left:3px solid var(--plan);border-radius:6px;padding:8px 12px;margin-bottom:7px;font-size:13px}
+.ptype{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase}
+.tag{font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:8px;margin-left:6px}
+.t-ex{background:#3a2517;color:var(--high)}.t-ok{background:#16351f;color:var(--low)}
+button{background:#2a1e1e;color:#ff9b9b;border:1px solid #4a2e2e;border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer;font-family:var(--mono)}
+.empty{color:var(--muted);font-size:13px;padding:20px;text-align:center}
+</style></head>
+<body><div class="wrap">
+<a class="back" href="/">← コンソールに戻る</a>
+<h1>攻撃グラフ / インベントリ</h1>
+<div class="sub">偵察・診断で発見したホスト・サービス・脆弱性・認証情報を構造化し、次の攻撃経路を自動導出します。
+<a href="#" onclick="load();return false" style="color:var(--plan)">🔄 更新</a>　
+<a href="#" onclick="clearAll();return false" style="color:#ff9b9b">🗑 全消去</a></div>
+<div class="bar" id="stats"></div>
+<h2>推奨される攻撃経路（自動導出）</h2>
+<div id="paths"><div class="empty">読み込み中…</div></div>
+<h2>発見したホスト</h2>
+<div id="hosts"><div class="empty">読み込み中…</div></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+async function load(){
+ const st=await(await fetch('/api/attack_state')).json();
+ const pj=await(await fetch('/api/attack_paths')).json();
+ const s=st.summary;
+ $('stats').innerHTML=[
+   ['ホスト',s.hosts],['サービス',s.services],['脆弱性',s.vulns],
+   ['検証済',s.verified_vulns],['認証情報',s.credentials],['発見',s.findings]
+ ].map(([k,v])=>`<div class="stat"><b>${v}</b> ${k}</div>`).join('');
+
+ const paths=pj.paths||[];
+ $('paths').innerHTML=paths.length?paths.map(p=>{
+   const tag=p.verified?'<span class="tag t-ok">検証済</span>':(p.type==='initial_access'?'<span class="tag t-ex">exploit有</span>':'');
+   return `<div class="path"><span class="ptype">${esc(p.type)}</span>${tag}<br>${esc(p.recommend)}</div>`;
+ }).join(''):'<div class="empty">攻撃経路はまだありません。偵察して発見を記録すると自動導出されます。</div>';
+
+ const hosts=st.hosts||[];
+ $('hosts').innerHTML=hosts.length?hosts.map(h=>{
+   let html=`<div class="host"><span class="hip">${esc(h.ip)}</span><span class="hos">${esc(h.hostname||'')} ${esc(h.os||'OS不明')} [${esc(h.status)}]</span>`;
+   for(const sv of h.services){
+     html+=`<div class="svc">▸ ${sv.port}/${esc(sv.proto)} ${esc(sv.service||'?')} ${esc(sv.product||'')} ${esc(sv.version||'')}</div>`;
+   }
+   for(const v of h.vulns){
+     const sev=esc(v.severity||'');
+     const ex=v.exploit_available?' ⚡':'';const ok=v.verified?' ✓検証済':'';
+     html+=`<div class="vuln sev-${sev}">! ${esc(v.cve||v.title)} [${sev} ${v.cvss||'?'}]${ex}${ok}</div>`;
+   }
+   for(const c of h.credentials){
+     html+=`<div class="cred">🔑 ${esc(c.username)} (${esc(c.kind)}) ${c.secret?'＝'+esc(c.secret):''} <span style="color:var(--muted)">via ${esc(c.source||'?')}</span></div>`;
+   }
+   for(const f of h.findings){
+     html+=`<div class="svc" style="color:var(--med)">★ [${esc(f.category)}] ${esc(f.title)}</div>`;
+   }
+   return html+'</div>';
+ }).join(''):'<div class="empty">まだホストが記録されていません。</div>';
+}
+
+async function clearAll(){
+ if(!confirm('攻撃グラフを全消去しますか？（この標的の作戦記憶が消えます）'))return;
+ await fetch('/api/engagement_clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+ load();
+}
+load();
+setInterval(load,5000);
+</script>
+</body></html>

@@ -1,0 +1,388 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Local Agent Console</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#101418;--panel:#171D24;--line:#2A333E;--ink:#E8EDF2;--muted:#8C99A8;--faint:#5B6877;
+--plan:#6FB3FF;--sum:#7BD8A8;--code:#F2A65A;--fast:#C9A8FF;--secure:#FF8B9E;--fb:#8C99A8;
+--mono:'IBM Plex Mono',ui-monospace,Consolas,monospace;--body:'Zen Kaku Gothic New',sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);padding:24px 16px;line-height:1.55}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:21px;font-weight:700;margin:0 0 2px}
+.sub{color:var(--muted);font-size:12px;font-family:var(--mono);margin-bottom:18px}
+h2{font-size:14px;font-weight:700;margin:24px 0 10px;display:flex;align-items:center;gap:8px}
+h2::before{content:"";width:14px;height:3px;background:var(--ink)}
+/* ===== 役職カード（model_map風） ===== */
+.roles{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;border-top:3px solid var(--c,var(--fb))}
+.card .r{font-weight:700;font-size:14px;color:var(--c,var(--ink))}
+.card .desc{font-size:10.5px;color:var(--faint);font-family:var(--mono);margin:1px 0 7px}
+.card .cur{font-family:var(--mono);font-size:11px;color:var(--ink);background:#10161d;border:1px dashed var(--line);border-radius:6px;padding:4px 7px;margin-bottom:8px}
+select{width:100%;background:#0d1116;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 6px;font-family:var(--mono);font-size:11px;margin-bottom:5px}
+/* ===== 実行バー ===== */
+.engines{display:flex;gap:14px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);
+border-radius:10px;padding:10px 14px;font-family:var(--mono);font-size:12px}
+.engines label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.engines .opt{color:var(--muted)}
+.runbar{display:flex;gap:10px;margin:16px 0;align-items:center;flex-wrap:wrap}
+input#req{flex:1;min-width:240px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:13px;font-family:var(--body)}
+button{background:var(--plan);color:#06121f;border:0;border-radius:9px;padding:10px 20px;font-weight:700;cursor:pointer;font-family:var(--body)}
+label.dry{font-size:12px;color:var(--muted);display:flex;gap:5px;align-items:center;font-family:var(--mono)}
+/* ===== フロー図（flow_map風・発光つき） ===== */
+.flow{display:flex;flex-wrap:wrap;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+.step{flex:1 1 100px;min-width:96px;background:#1D252E;border:1.4px solid var(--c,var(--fb));border-radius:9px;padding:7px 8px;opacity:.45;transition:all .25s}
+.step .n{font-family:var(--mono);font-size:9.5px;color:var(--c,var(--muted));font-weight:600}
+.step .f{font-family:var(--mono);font-size:10.5px;font-weight:600;margin:1px 0}
+.step .d{font-size:9.5px;color:var(--muted)}
+.step.on{opacity:1;box-shadow:0 0 14px var(--c,#fff),inset 0 0 6px rgba(255,255,255,.06);transform:translateY(-2px)}
+.step.done{opacity:.8}
+/* ===== ログ ===== */
+.panes{display:grid;grid-template-columns:1fr 1.7fr;gap:12px;margin-top:14px}
+.pane{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;height:54vh;overflow:auto}
+.hype{font-size:13px;padding:6px 8px;border-bottom:1px dashed var(--line);color:var(--code)}
+.ev{font-family:var(--mono);font-size:11.5px;padding:6px 8px;border-bottom:1px solid var(--line);white-space:pre-wrap;word-break:break-word}
+.ev.err{background:rgba(255,80,90,.13);border-left:3px solid #ff505a;color:#ffb3b8}
+.ev.exp{font-family:var(--body);font-size:13px;line-height:1.6;border-left:3px solid var(--plan);background:rgba(111,179,255,.07)}
+.ev.nar{font-family:var(--body);font-size:13px;color:var(--code);border-bottom:1px dashed var(--line)}
+.ev.err .tag{background:#ff505a;color:#fff}
+.tag{display:inline-block;font-size:9.5px;padding:1px 7px;border-radius:5px;margin-right:6px;font-weight:700}
+.t-send{background:rgba(111,179,255,.18);color:var(--plan)}.t-try{background:rgba(201,168,255,.18);color:var(--fast)}
+.t-recv{background:rgba(123,216,168,.18);color:var(--sum)}.t-limit,.t-error,.t-fail{background:rgba(242,166,90,.2);color:var(--code)}
+.t-flow{background:rgba(232,237,242,.12);color:var(--ink)}
+.t-duplicate{background:rgba(242,166,90,.2);color:var(--code)}
+.t-judge{background:rgba(201,168,255,.18);color:var(--fast)}
+.t-final{background:rgba(123,216,168,.25);color:var(--sum)}
+#finalReport{background:var(--panel);border:1px solid var(--sum);border-radius:12px;padding:14px;margin-top:14px;display:none}
+#finalReport h3{margin:0 0 8px;color:var(--sum);font-size:15px}
+#finalReport .obj{font-family:var(--mono);font-size:12px;padding:5px 0;border-bottom:1px dashed var(--line)}
+@media(max-width:860px){.panes{grid-template-columns:1fr}}
+/* ===== クモの巣グラフ ===== */
+.webwrap{display:grid;grid-template-columns:1.1fr 1fr;gap:12px}
+@media(max-width:860px){.webwrap{grid-template-columns:1fr}}
+.netpanel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px}
+.gnode circle{fill:#1D252E;stroke-width:1.6;transition:all .2s}
+.gnode text{font-family:var(--mono);fill:var(--ink)}
+.gnode .mname{font-size:8px;fill:var(--muted)}
+.gnode.on circle{filter:drop-shadow(0 0 9px var(--g,#fff));stroke-width:2.6}
+.gnode.on .mname{fill:var(--ink)}
+.medge{stroke-dasharray:4 4;opacity:.55}
+.gnode.pulse circle{filter:drop-shadow(0 0 7px var(--sum))}
+/* ===== 役割マップ（model_map風・クリックで切替・実行中発光） ===== */
+.mapwrap{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:6px}
+#map{width:100%;height:auto;display:block}
+.rnode{cursor:pointer}
+.rnode rect{fill:#1D252E;stroke-width:1.6;transition:filter .2s,transform .2s}
+.rnode:hover rect{filter:brightness(1.25)}
+.rnode .title{font-family:var(--body);font-weight:700;font-size:13px;fill:var(--ink)}
+.rnode .model{font-family:var(--mono);font-size:10px;fill:var(--muted)}
+.rnode .role{font-family:var(--mono);font-size:8.5px;fill:var(--faint)}
+.rnode.on rect{filter:drop-shadow(0 0 12px var(--c,#fff));stroke-width:2.8}
+.rnode.on .model{fill:var(--ink)}
+.center rect{fill:#11161d;stroke:var(--ink)}
+.edge{fill:none;stroke-width:1.6}
+.mnode circle{fill:#161c23;stroke:var(--sum);stroke-dasharray:3 3;transition:filter .2s}
+.mnode.pulse circle{filter:drop-shadow(0 0 9px var(--sum))}
+.mnode text{font-family:var(--mono);fill:var(--muted)}
+/* ポップオーバー（ノードクリックで開く） */
+#pop{position:absolute;display:none;z-index:20;background:#0d1116;border:1px solid var(--line);
+border-radius:10px;padding:10px;width:230px;box-shadow:0 8px 28px #000a}
+#pop h4{margin:0 0 7px;font-size:12px}
+#pop select{width:100%;background:#0d1116;color:var(--ink);border:1px solid var(--line);
+border-radius:6px;padding:5px 6px;font-family:var(--mono);font-size:11px;margin-bottom:6px}
+#pop .x{position:absolute;top:6px;right:9px;color:var(--muted);cursor:pointer;font-size:13px}
+
+
+</style></head><body><div class="wrap">
+<h1>Local Agent Console</h1>
+<div class="sub">役職クリックでモデル差し替え / フロー発光 / LLM行動の超詳細ログ / 実況ナレーター</div>
+
+<h2>マップと記憶（別ページ）　<a href="/attack" style="font-size:12px;color:#ff9f43;font-family:var(--mono)">⚔ 攻撃グラフ →</a>　<a href="/tools" style="font-size:12px;color:var(--plan);font-family:var(--mono)">⚙ ツール管理 →</a></h2>
+<div class="engines" style="gap:18px">
+  <a href="/map" target="_blank" style="color:var(--plan);text-decoration:none">🗺 役割マップ（モデル差し替え）↗</a>
+  <a href="/galaxy" target="_blank" style="color:var(--sum);text-decoration:none">🌌 記憶の銀河 ↗</a>
+  <a href="/memory" target="_blank" style="color:var(--fast);text-decoration:none">📋 記憶ビューア（一覧）↗</a>
+  <a href="/stats" target="_blank" style="color:var(--code);text-decoration:none">📊 行動分析・性格・得意分野 ↗</a>
+  <a href="/shortterm" target="_blank" style="color:var(--muted);text-decoration:none">🧠 短期記憶（実行中）↗</a>
+  <a href="/replay" target="_blank" style="color:var(--plan);text-decoration:none">🧭 判断の再生・由来追跡 ↗</a>
+</div>
+
+<h2>検索エンジン（チェック＝必須・必ず照会 / 未チェック＝任意・フォールバック専用）</h2>
+<div class="engines" id="engines"></div>
+
+<h2>エージェントのモード（システムプロンプト切替）</h2>
+<div class="engines" id="modes" style="gap:14px"></div>
+
+<h2>使えるツール（type:tool で呼べる拡張機能）　<a href="/tools" style="font-size:12px;color:var(--plan);font-family:var(--mono)">⚙ ツール管理 →</a>　<a href="/experts" style="font-size:12px;color:var(--fast);font-family:var(--mono)">🤖 ツール専門家の設定 →</a></h2>
+<div class="engines" id="tools" style="gap:10px"><span style="color:var(--muted)">読み込み中…</span></div>
+
+<h2>ツール専門家（各ツール専用のLLMを割り当て）　<a href="/experts" style="font-size:12px;color:var(--fast);font-family:var(--mono)">🤖 専用ページで設定 →</a>　<a href="/benchmark" style="font-size:12px;color:var(--sum);font-family:var(--mono)">🧪 モデル評価 →</a>　<a href="/scores" style="font-size:12px;color:var(--plan);font-family:var(--mono)">📊 成績グラフ →</a>　<a href="/capabilities" style="font-size:12px;color:var(--fast);font-family:var(--mono)">🧬 能力ベクトル →</a></h2>
+
+<div class="runbar">
+  <input id="req" placeholder="やりたいことを入力（例: Python 3.14の新機能を調べてメモにまとめて）">
+  <label class="dry"><input type="checkbox" id="dry" checked onchange="if(this.checked){interactive.checked=false;autonomous.checked=false}"> dry-run</label>
+  <label class="dry"><input type="checkbox" id="interactive" onchange="if(this.checked){dry.checked=false;autonomous.checked=false}"> 対話承認</label>
+  <label class="dry" title="承認なしで全自動実行。exploit/権限昇格/横展開まで実行するにはこれを選択（隔離環境向け）"><input type="checkbox" id="autonomous" onchange="if(this.checked){dry.checked=false;interactive.checked=false}"> 完全自律（exploitまで実行）</label>
+  <button onclick="run()">実行</button>
+</div>
+
+<h2>インストール済み（pip/apt/npm等を自動記録）</h2>
+<h2>SSH接続（Kali等のリモート実行先）</h2>
+<div class="runbar" style="flex-wrap:wrap">
+  <input id="sshHost" placeholder="ホスト (例: 10.0.0.5)" style="max-width:160px">
+  <input id="sshUser" placeholder="ユーザ (例: kali)" style="max-width:120px">
+  <input id="sshPort" placeholder="22" value="22" style="max-width:70px">
+  <input id="sshPass" type="password" placeholder="パスワード (任意)" style="max-width:150px">
+  <input id="sshKey" placeholder="鍵ファイルパス (任意)" style="max-width:170px">
+  <button onclick="sshConnect()">接続</button>
+  <button onclick="sshDisconnect()" style="background:#2A333E;color:var(--ink)">切断</button>
+  <span id="sshStat" style="font-family:var(--mono);font-size:12px;color:var(--muted)"></span>
+</div>
+
+<h2>Kali 利用可能ツール（apt list から1日1回取得・GUI除外）<span id="kaliMeta" style="font-size:11px;color:var(--muted);font-weight:normal"></span></h2>
+<div class="runbar" style="flex-wrap:wrap">
+  <input id="kaliPref" placeholder="使ってほしいツール (カンマ区切り 例: nmap, sqlmap, gobuster)" style="flex:1;min-width:280px">
+  <button onclick="savePreferred()">優先指定を保存</button>
+  <button onclick="refreshKali()" style="background:#2A333E;color:var(--ink)">今すぐ再取得</button>
+</div>
+<div id="kaliList" style="margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--muted);max-height:90px;overflow:auto"></div>
+
+<h2>APIキー設定（プロバイダごとに使うキーを選択・複数キー対応）</h2>
+<div id="apiKeys" style="display:flex;flex-direction:column;gap:6px"></div>
+
+<h2>Mistral Agent 設定（任意）</h2>
+<div class="runbar" style="flex-wrap:wrap">
+  <input id="mistralAgent" placeholder="agent_id (任意, 空=通常チャット)" style="flex:1;min-width:240px">
+  <input id="mistralVer" placeholder="ver" value="0" style="max-width:60px">
+  <button onclick="saveMistralAgent()">Agent保存</button>
+  <span id="mistralStat" style="font-family:var(--mono);font-size:12px;color:var(--muted)"></span>
+</div>
+
+<h2>インストール済みライブラリ（重複インストール防止・UIで削除可）</h2>
+<div id="installs"><span style="color:var(--muted)">まだありません</span></div>
+
+<h2>処理フロー（実行中の関数が光る）</h2>
+<div class="flow" id="flow"></div>
+
+<div id="finalReport"></div>
+
+<div id="approveBox" style="display:none;position:fixed;left:50%;top:30%;transform:translateX(-50%);z-index:50;background:var(--panel);border:2px solid var(--code);border-radius:14px;padding:18px 22px;width:min(520px,90vw);box-shadow:0 12px 40px #000c">
+  <div style="font-weight:700;margin-bottom:8px;color:var(--code)">⚠ 実行してよいですか？</div>
+  <div id="approveText" style="font-family:var(--mono);font-size:12px;white-space:pre-wrap;margin-bottom:14px;max-height:40vh;overflow:auto"></div>
+  <div style="display:flex;gap:10px;justify-content:flex-end">
+    <button onclick="answerApprove(false)" style="background:#2A333E;color:var(--ink)">いいえ</button>
+    <button onclick="answerApprove(true)" style="background:var(--sum);color:#06121f">実行する</button>
+  </div>
+</div>
+
+<div id="intervene_bar" style="display:none;margin-top:12px;padding:10px;border:1px solid var(--secure);border-radius:10px;background:#1a1418">
+  <div style="font-size:12px;color:var(--secure);margin-bottom:6px">🎙 実行中の介入 — ログを見て方向を直したくなったら指示を送れます</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <input id="iv_msg" placeholder="例: SQLiでなくXSSを試して / 偵察に戻れ / 別ポートを見て" style="flex:1;min-width:180px" onkeydown="if(event.key==='Enter')sendIv()">
+    <button onclick="sendIv()">送信</button>
+    <button onclick="stopAgent()" style="background:#ff505a">⏹ 停止</button>
+  </div>
+  <div id="iv_log" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
+</div>
+
+<div style="margin-top:14px"><h2>📣 実況ナレーター（AI実況）</h2><div class="pane" id="narrate" style="height:auto;max-height:18vh"></div></div>
+<div class="panes">
+  <div><h2>🧑‍🏫 ログ解説（AIが逐次説明）</h2><div class="pane" id="explain"></div></div>
+  <div><h2>詳細ログ（関数・処理内容・payload全表示）</h2><div class="pane" id="log"></div></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+// (役割マップは /map ページへ分離)
+// ---- フロー段 ----
+const STEPS=[["goal_start","run_agent","要望受付","--secure"],
+ ["make_goal","make_goal","goal役: 分解","--plan"],["recall","ltm.search_by_tags","記憶検索","--sum"],
+ ["plan_next_action","plan_next_action","system役: 計画","--plan"],["repair_json","repair_json","JSON修復","--fast"],
+ ["execute_action","execute_action","executor: 実行","--code"],["summarize_objective","summarize_objective","要約","--sum"],
+ ["memory_save","ltm.save","保存","--sum"],["run_done","完了","クリア","--secure"]];
+function buildFlow(){const nums="❶❷❸❹❺❻❼❽❾";
+ $('flow').innerHTML=STEPS.map(([k,f,d,c],n)=>
+  `<div class="step" id="st-${k}" style="--c:var(${c})"><div class="n">${nums[n]} </div>
+   <div class="f">${f}</div><div class="d">${d}</div></div>`).join('');}
+function glow(key){document.querySelectorAll('.step.on').forEach(e=>{e.classList.remove('on');e.classList.add('done')});
+ const el=$('st-'+key);if(el){el.classList.remove('done');el.classList.add('on')}}
+function pulse(id){const n=$(id);if(!n)return;n.classList.add('pulse');setTimeout(()=>n.classList.remove('pulse'),450);}
+function add(pane,html,cls){const d=document.createElement('div');d.className=cls;d.innerHTML=html;
+ $(pane).appendChild(d);$(pane).scrollTop=$(pane).scrollHeight;}
+function nodeGlow(role,on){const n=$('nd-'+role);if(n)on?n.classList.add('on'):setTimeout(()=>n.classList.remove('on'),250);}
+// ---- 実行 ----
+let CURRENT_ES=null;
+async function run(){
+ if(CURRENT_ES){try{CURRENT_ES.close();}catch(e){}CURRENT_ES=null;}  // 前回のストリームを必ず閉じる
+ PENDING_APPROVE=null; const ab=$('approveBox'); if(ab)ab.style.display='none';
+ $('explain').innerHTML='';$('log').innerHTML='';$('narrate').innerHTML='';
+ const fr=$('finalReport'); if(fr)fr.style.display='none';
+ document.querySelectorAll('.step').forEach(e=>e.classList.remove('on','done'));
+ const body={request:$('req').value,dry_run:$('dry').checked,interactive:$('interactive').checked,autonomous:$('autonomous').checked};
+ const r=await(await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify(body)})).json();
+ if(!r.run_id){add('log',`<span class="tag t-run">run</span>${esc(r.error||'実行を開始できませんでした')}`,'ev err');return;}
+ CURRENT_RUN=r.run_id;
+ $('intervene_bar').style.display='block';$('iv_log').innerHTML='';
+ const es=new EventSource('/api/stream?run_id='+r.run_id); CURRENT_ES=es;
+ es.onmessage=e=>{const m=JSON.parse(e.data);const p=m.payload||{};
+  if(m.event==='explain'&&p.text)add('explain',esc(p.text),'ev exp');
+  if(m.event==='narrate'&&p.text)add('narrate',esc(p.text),'ev nar');
+  // 対話承認: ボタンで答える
+  if(m.event==='approval_request'){showApprove(p.id,p.prompt);}
+  if(m.event==='flow'){const t=p.type;
+   if(t==='fn')glow(p.fn);
+   else if(t==='goal_start'||t==='memory_save'||t==='run_done')glow(t);
+   else if(t==='objective_start')glow('recall');}
+  const head=m.event==='flow'?`flow/${p.type||''}`:m.event;
+  const detail=Object.entries(p).map(([k,v])=>`${k}: ${esc(typeof v==='object'?JSON.stringify(v):v)}`).join('\n');
+  const blob=(m.event+' '+(p.type||'')).toLowerCase();
+  const isErr=/error|fail|refusal|loop_detected|blocked|mismatch/.test(blob)||(p.error!==undefined&&p.error!==''&&p.error!==null)||p.success===false;
+  add('log',`<span class="tag t-${m.event.split('_')[0]}">${head}</span>${detail}`,isErr?'ev err':'ev');
+  if(m.event==='flow'&&p.type==='final_report'){
+    const fr=$('finalReport');fr.style.display='block';
+    fr.innerHTML=`<h3>🏁 最終結果：${esc(p.goal)}（達成 ${p.done}/${p.total}）</h3>`+
+     p.results.map((r,i)=>`<div class="obj">${r.success?'✓':'△'} 目的${i+1}: ${esc(r.objective)}<br>　→ ${esc(r.summary)}</div>`).join('');
+   }
+   if(m.event==='flow'&&p.type==='installs')loadInstalls();
+   if(m.event==='run_done'||m.event==='run_error'||(m.event==='flow'&&p.type==='run_done')){loadInstalls();es.close();CURRENT_ES=null;$('intervene_bar').style.display='none';}};
+ // EventSourceは接続断で自動再接続する。完了後やエラー時に再接続ループへ陥らないよう明示的に閉じる。
+ es.onerror=()=>{try{es.close();}catch(e){}CURRENT_ES=null;$('intervene_bar').style.display='none';};
+}
+async function sendIv(){
+ const inp=$('iv_msg');const msg=(inp.value||'').trim();if(!msg)return;
+ try{const r=await(await fetch('/api/intervene',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg})})).json();
+  if(r.ok){$('iv_log').innerHTML='→ 送信: '+esc(msg)+'<br>'+$('iv_log').innerHTML;inp.value='';}
+  else{$('iv_log').innerHTML='<span style="color:#ff8b9e">失敗: '+esc(r.error||'')+'</span><br>'+$('iv_log').innerHTML;}
+ }catch(e){$('iv_log').textContent='エラー: '+e;}
+}
+async function stopAgent(){
+ if(!confirm('実行中のエージェントを停止しますか？'))return;
+ try{await fetch('/api/stop_agent',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  $('iv_log').innerHTML='→ 停止を要求しました<br>'+$('iv_log').innerHTML;
+ }catch(e){$('iv_log').textContent='エラー: '+e;}
+}
+// ---- 対話承認 ----
+let CURRENT_RUN=null, PENDING_APPROVE=null;
+function showApprove(id,prompt){PENDING_APPROVE=id;
+ $('approveText').textContent=prompt;$('approveBox').style.display='block';}
+async function answerApprove(ok){$('approveBox').style.display='none';
+ await fetch('/api/approve',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({run_id:CURRENT_RUN,approved:ok})});}
+
+async function loadEngines(){
+ const d=await(await fetch('/api/engines')).json();
+ $('engines').innerHTML=d.engines.map(e=>
+  `<label class="${e.required?'':'opt'}"><input type="checkbox" ${e.required?'checked':''}
+    onchange="setEngine('${e.name}',this.checked)"> ${e.name} ${e.required?'(必須)':'(任意)'}</label>`).join('');
+}
+async function setEngine(name,required){
+ await fetch('/api/engine',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({name,required})});
+ loadEngines();
+}
+async function loadInstalls(){
+ const d=await(await fetch('/api/installs')).json();
+ const box=$('installs');
+ if(!d.installs.length){box.innerHTML='<span style="color:var(--muted)">まだありません</span>';return;}
+ box.innerHTML=d.installs.map(it=>
+  `<span style="display:inline-flex;align-items:center;gap:6px;background:#10161d;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin:0 6px 6px 0;font-family:var(--mono);font-size:12px;color:${it.success?'var(--sum)':'var(--code)'}">
+    ${it.success?'✓':'✗'} [${esc(it.manager)}] ${esc(it.package)}<span style="color:var(--faint)">@${esc(it.where)}</span>
+    <span style="cursor:pointer;color:var(--fast)" title="実際にアンインストール" onclick="uninstall('${esc(it.manager)}','${esc(it.package)}','${esc(it.where)}')">⏏</span>
+    <span style="cursor:pointer;color:var(--code)" title="記録から削除のみ" onclick="removeInstall('${esc(it.manager)}','${esc(it.package)}','${esc(it.where)}')">✕</span>
+   </span>`).join('');
+}
+async function uninstall(mgr,pkg,where){
+ if(!confirm(`${pkg} を実際にアンインストールします（${mgr}）。よろしいですか？`))return;
+ const r=await(await fetch('/api/install_uninstall',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({manager:mgr,package:pkg,where:where})})).json();
+ alert('実行: '+r.command+'\n'+(r.output||''));
+ loadInstalls();
+}
+async function removeInstall(mgr,pkg,where){
+ await fetch('/api/install_remove',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({manager:mgr,package:pkg,where:where})});
+ loadInstalls();
+}
+async function sshStatus(){
+ const s=await(await fetch('/api/ssh_status')).json();
+ $('sshStat').textContent=s.connected?`接続中: ${s.user}@${s.host}:${s.port} (${s.backend})`:'未接続';
+ $('sshStat').style.color=s.connected?'var(--sum)':'var(--muted)';
+}
+async function sshConnect(){
+ $('sshStat').textContent='接続中…';
+ const r=await(await fetch('/api/ssh_connect',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({host:$('sshHost').value,user:$('sshUser').value,port:+$('sshPort').value||22,
+     password:$('sshPass').value||null,key_path:$('sshKey').value||null})})).json();
+ $('sshPass').value='';   // 入力後は画面から消す
+ alert(r.result); sshStatus();
+}
+async function sshDisconnect(){await fetch('/api/ssh_disconnect',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});sshStatus();}
+function openMemory(kind){ window.open('/memory', '_blank'); }
+buildFlow();loadEngines();loadInstalls();loadModes();sshStatus();loadTools();loadKali();loadApiKeys();loadMistralAgent();
+const PROV_LABEL={groq:'Groq',cerebras:'Cerebras',google_studio:'Google (Gemini)',open_router:'OpenRouter',mistral:'Mistral'};
+async function loadApiKeys(){
+ try{const d=await(await fetch('/api/api_keys')).json();
+  const box=$('apiKeys');
+  box.innerHTML=Object.entries(d.providers).map(([p,c])=>{
+   const opts=(c.available.length?c.available:[c.default]).map(k=>`<option value="${k}" ${k===c.current?'selected':''}>${k}</option>`).join('');
+   return `<div style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:12px">
+     <span style="width:140px;color:var(--ink)">${PROV_LABEL[p]||p}</span>
+     <select onchange="saveApiKey('${p}',this.value)" style="min-width:200px">${opts}</select>
+     <span style="color:var(--muted)">${c.available.length}個の候補</span>
+   </div>`;}).join('');
+ }catch(e){}
+}
+async function saveApiKey(provider,keyName){
+ await fetch('/api/api_key',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({provider:provider,key_name:keyName})});
+}
+async function loadMistralAgent(){
+ try{const d=await(await fetch('/api/mistral_config')).json();
+  $('mistralAgent').value=d.config.agent_id||'';
+  $('mistralVer').value=d.config.agent_version||0;
+  $('mistralStat').textContent=d.config.agent_id?'Agent使用':'通常チャット';
+ }catch(e){}
+}
+async function saveMistralAgent(){
+ const r=await(await fetch('/api/mistral_config',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({agent_id:$('mistralAgent').value,agent_version:+$('mistralVer').value||0})})).json();
+ loadMistralAgent();
+ alert('Mistral Agent設定を保存: '+(r.config.agent_id||'通常チャット'));
+}
+async function loadKali(){
+ try{const d=await(await fetch('/api/kali_tools')).json();
+  const st=d.status;
+  $('kaliMeta').textContent = st.count? ` ｜ ${st.count}個 (取得${st.age_hours!=null?st.age_hours+'h前':'未取得'})` : ' ｜ 未取得（SSH接続して再取得）';
+  $('kaliPref').value = (d.preferred||[]).join(', ');
+  $('kaliList').textContent = d.available.length? '利用可能: '+d.available.slice(0,120).join(', ')+(d.available.length>120?' …':'') : '（SSH接続後に「今すぐ再取得」で取得されます）';
+ }catch(e){}
+}
+async function savePreferred(){
+ const arr=$('kaliPref').value.split(',').map(s=>s.trim()).filter(Boolean);
+ await fetch('/api/kali_preferred',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({preferred:arr})});
+ alert('優先ツールを保存しました: '+arr.join(', '));
+}
+async function refreshKali(){
+ $('kaliMeta').textContent=' ｜ 取得中…';
+ const r=await(await fetch('/api/kali_refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
+ if(!r.ok)alert('取得失敗: '+(r.reason||'不明'));
+ loadKali();
+}
+async function loadTools(){
+ try{const d=await(await fetch('/api/tools')).json();
+  $('tools').innerHTML=d.tools.map(t=>
+   `<span class="tag" title="${esc(Object.keys(t.args).join(', '))}" style="background:#10161d;border:1px solid var(--line);border-radius:6px;padding:3px 9px;font-family:var(--mono);font-size:12px;color:var(--fast)">🔧 ${esc(t.name)}</span>`).join(' ')
+   +`<div class="hint" style="color:var(--muted);font-size:11px;margin-top:6px">エージェントが必要に応じて自動で使います</div>`;
+ }catch(e){}
+}
+async function loadModes(){
+ const d=await(await fetch('/api/modes')).json();
+ $('modes').innerHTML=d.modes.map(m=>
+  `<label class="dry" title="${esc(m.desc)}"><input type="radio" name="mode" value="${m.id}" ${m.active?'checked':''} onchange="setMode('${m.id}')"> ${esc(m.name)}</label>`).join('');
+}
+async function setMode(id){
+ await fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:id})});
+}
+</script></div></body></html>

@@ -1,0 +1,44 @@
+# ローカルAIエージェント — 依存ライブラリ
+# すべて遅延importでフォールバック付き。最小構成は ollama のみでも動く。
+
+# ===== 中核（推奨） =====
+requests               # ollama サーバへのHTTP接続に使用（ollama呼び出しは全てREST API）
+python-dotenv          # .env からAPIキーを読み込む（get_env）
+# 注: ollama Python ライブラリは不要。起動中の ollama serve へ requests で
+#     直接接続する（/api/tags, /api/chat, /api/embeddings）。
+#     必要なのは ollama 本体（serve）が起動していることだけ。
+
+# ===== SSHリモート実行（任意。無ければ subprocess の ssh にフォールバック） =====
+paramiko               # Kali等への永続SSHセッション
+
+# ===== クラウドLLMプロバイダ（使うものだけ。無ければそのプロバイダのみ無効） =====
+groq                   # Groq
+cerebras-cloud-sdk     # Cerebras
+openai                 # OpenRouter（OpenAI互換クライアント経由）
+google-genai           # Google AI Studio（Gemini）
+mistralai              # Mistral AI（チャット / Agents）
+
+# ===== Web検索（任意。無ければ DuckDuckGo エンジンにフォールバック） =====
+reportlab              # PDF診断レポート生成（日本語対応）
+playwright             # ブラウザ操作・スクショ（動的Web診断）。導入後: playwright install chromium
+search-engines-scraper # Bing等のスクレイプ検索
+# ↑ GitHub版を使う場合:
+# pip install git+https://github.com/tasos-py/Search-Engines-Scraper.git
+
+# ===== 備考 =====
+# - Tavily検索は urllib で直接APIを叩くため pip 不要（TAVILY_API_KEY のみ）
+# - 埋め込みは ollama の nomic-embed-text を使用（要 `ollama pull nomic-embed-text`）。
+#   無い場合は依存ゼロの簡易ベクトルに自動フォールバック
+# - 標準ライブラリのみで動く部分（記憶DB/統計/Web UI/承認/モード等）は追加インストール不要
+
+# ===== 必要な環境変数（.env または OS環境変数） =====
+# GROQ_API_KEY1          : Groq
+# CREBRAS_API_KEY        : Cerebras （※コード上の綴りに合わせる）
+# GOOGLE_API_KEY2        : Google AI Studio
+# OPEN_ROUTER_API_KEY    : OpenRouter
+# MISTRAL_API_KEY        : Mistral（MISTRAL_API_KEY2 等 複数可・UIで選択）
+# TAVILY_API_KEY         : Tavily検索
+# NVD_API_KEY            : NVD脆弱性DB（任意・cve_lookupが安定）https://nvd.nist.gov/developers/request-an-api-key
+# AGENT_AUTO_APPROVE=1   : 承認スキップ（任意）
+# AGENT_OFFLINE=1        : ollamaのみ使用（任意）
+flask                  # 脆弱性練習アプリ web_alert/app.py 用（任意）

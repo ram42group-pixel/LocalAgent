@@ -1,0 +1,170 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>記憶のナレッジグラフ</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F4F8FD;--ink:#22303f;--muted:#5b6b7b;--line:#cdd8e4;--mono:'IBM Plex Mono',monospace;--body:'Zen Kaku Gothic New',sans-serif}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--body);overflow:hidden}
+#top{position:fixed;top:0;left:0;right:0;padding:10px 16px;z-index:5;display:flex;gap:14px;align-items:baseline;background:linear-gradient(#F4F8FDdd,#F4F8FD00)}
+#top a{color:#2b7fd4;text-decoration:none;font-size:12px;font-family:var(--mono)}
+h1{font-size:16px;margin:0}.sub{color:var(--muted);font-size:11px;font-family:var(--mono)}
+#cv{position:fixed;inset:0;width:100%;height:100%;cursor:grab;z-index:1;touch-action:none}
+#legend{position:fixed;left:14px;bottom:14px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-family:var(--mono);font-size:11px;color:var(--muted);z-index:5;box-shadow:0 4px 14px #0001}
+#legend b{color:var(--ink)} .lg{display:inline-flex;align-items:center;gap:5px;margin-right:10px}
+.lg i{width:11px;height:11px;border-radius:3px;display:inline-block}
+#info{position:fixed;right:14px;top:50px;width:280px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px;z-index:6;display:none;box-shadow:0 6px 20px #0002}
+#info h3{margin:0 0 4px;font-size:14px}#info .t{font-family:var(--mono);font-size:11px;color:var(--muted)}
+#info .x{float:right;cursor:pointer;color:var(--muted)}
+.empty{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-family:var(--mono);text-align:center;padding:20px}
+</style></head><body>
+<div id="top"><a href="/">← コンソール</a><h1>記憶のナレッジグラフ</h1><span class="sub" id="sub">読み込み中…</span>
+ <a href="#" onclick="fitView();return false" style="color:#2b7fd4;font-size:11px;font-family:var(--mono)">全体表示</a>
+ <a href="#" onclick="resetGraph();return false" style="color:#c0563f;font-size:11px;font-family:var(--mono)">記憶を全消去</a></div>
+<canvas id="cv"></canvas>
+<div id="zoomctl" style="position:fixed;right:16px;bottom:16px;z-index:10;display:flex;flex-direction:column;gap:6px">
+  <button onclick="zoomBy(1.25)" style="width:40px;height:40px;font-size:20px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;box-shadow:0 2px 8px #0002">＋</button>
+  <button onclick="zoomBy(0.8)" style="width:40px;height:40px;font-size:20px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;box-shadow:0 2px 8px #0002">－</button>
+  <button onclick="fitView()" title="全体表示" style="width:40px;height:40px;font-size:14px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;box-shadow:0 2px 8px #0002">⤢</button>
+</div>
+<div id="legend"></div>
+<div id="info"></div>
+<script>
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d'),$=id=>document.getElementById(id);
+const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+let W,H;function resize(){W=cv.width=innerWidth*devicePixelRatio;H=cv.height=innerHeight*devicePixelRatio;
+ cv.style.width=innerWidth+'px';cv.style.height=innerHeight+'px';}resize();addEventListener('resize',resize);
+// 種類→色（画像の水色系を基調に、種類で濃淡や色相を変える）
+const TYPE_COLOR={"Memory":"#1f6fb2","人物":"#3a93d6","組織":"#2b7fc4","能力":"#5fb0e6","業務":"#3f9bd8",
+ "事実":"#74bdee","プロジェクト":"#2f88cf","指標":"#86c5f0","役職":"#5aa8e0","技術":"#4aa0dc","その他":"#9ec9e8"};
+function colorOf(t){return TYPE_COLOR[t]||TYPE_COLOR["その他"];}
+let nodes=[],edges=[],view={x:0,y:0,scale:1},drag=null,pan=null,SELECTED=null,alpha=1;
+
+async function load(){
+ let g;try{g=await(await fetch('/api/memory_graph')).json();}catch(e){$('sub').textContent='取得失敗';return;}
+ g.nodes=g.nodes||[];g.edges=g.edges||[];g.types=g.types||{};
+ if(!g.nodes.length){document.body.insertAdjacentHTML('beforeend','<div class="empty">まだ記憶がありません。<br>エージェントを実行すると、要約からエンティティと関係が抽出され、ここに知識グラフが育ちます。</div>');$('sub').textContent='0';return;}
+ $('sub').textContent=`${g.nodes.length} ノード / ${g.edges.length} 関係`;
+ // 凡例
+ $('legend').innerHTML='<b>種類</b>（大きいノードほど重要＝つながりが多い）<br>'+Object.entries(g.types).map(([t,n])=>
+   `<span class="lg"><i style="background:${colorOf(t)}"></i>${esc(t)}(${n})</span>`).join('');
+ const cx=innerWidth/2,cy=innerHeight/2,R=Math.min(cx,cy)*1.4;
+ nodes=g.nodes.map((n,i)=>{const a=i/g.nodes.length*Math.PI*2,r=R*(0.3+0.7*Math.random());
+   return {...n,x:cx+Math.cos(a)*r,y:cy+Math.sin(a)*r,vx:0,vy:0};});
+ const byId=Object.fromEntries(nodes.map(n=>[n.id,n]));
+ edges=g.edges.map(e=>({s:byId[e.source],t:byId[e.target],label:e.label})).filter(e=>e.s&&e.t);
+ requestAnimationFrame(tick);
+ setTimeout(fitView,1300);   // レイアウトが落ち着いた頃に全体表示
+}
+function physics(){if(alpha<0.02&&!drag)return;const cx=innerWidth/2,cy=innerHeight/2;
+ const k=Math.max(0.7,Math.min(1.6,70/Math.max(nodes.length,1))); // ノード数で反発を調整
+ for(let i=0;i<nodes.length;i++){const a=nodes[i];a.vx+=(cx-a.x)*0.0025;a.vy+=(cy-a.y)*0.0025;
+  for(let j=i+1;j<nodes.length;j++){const b=nodes[j];let dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy+0.01,d=Math.sqrt(d2);
+   if(d>520)continue;                                  // 遠いノードは反発させない（発散防止）
+   const rep=5200*k/d2;a.vx+=dx/d*rep;a.vy+=dy/d*rep;b.vx-=dx/d*rep;b.vy-=dy/d*rep;}}
+ edges.forEach(e=>{let dx=e.t.x-e.s.x,dy=e.t.y-e.s.y,d=Math.hypot(dx,dy)||1,tgt=(e.label==='関連'?260:170),f=(d-tgt)*0.008;
+   e.s.vx+=dx/d*f;e.s.vy+=dy/d*f;e.t.vx-=dx/d*f;e.t.vy-=dy/d*f;});
+ // 画面外への暴走を抑える境界（ノードが多いほど広く取る）
+ const Rmax=Math.min(innerWidth,innerHeight)*(1.0+nodes.length*0.012);
+ nodes.forEach(n=>{if(n===drag)return;n.vx*=0.82;n.vy*=0.82;n.x+=n.vx*alpha;n.y+=n.vy*alpha;
+   const ddx=n.x-cx,ddy=n.y-cy,dd=Math.hypot(ddx,ddy);
+   if(dd>Rmax){n.x=cx+ddx/dd*Rmax;n.y=cy+ddy/dd*Rmax;}});
+ alpha*=0.985;}  // 徐々に落ち着かせる（操作と戦わない）
+function S(n){return {x:(n.x-innerWidth/2)*view.scale+innerWidth/2+view.x,
+                     y:(n.y-innerHeight/2)*view.scale+innerHeight/2+view.y};}
+function roundRect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);
+ ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function tick(){
+ physics();ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);ctx.clearRect(0,0,W,H);
+ ctx.font=`${11*view.scale}px 'IBM Plex Mono',monospace`;ctx.textAlign='center';ctx.textBaseline='middle';
+ // edges（矢印＋ラベル）
+ edges.forEach(e=>{const a=S(e.s),b=S(e.t);const isMem=e.label==='関連';
+   ctx.strokeStyle=isMem?'rgba(120,170,220,.35)':'#9fb6cc';ctx.lineWidth=isMem?0.8:1.2;
+   if(isMem)ctx.setLineDash([4,4]);else ctx.setLineDash([]);
+   ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.setLineDash([]);
+   // 矢印頭
+   if(!isMem){const ang=Math.atan2(b.y-a.y,b.x-a.x),L=9*view.scale,hx=b.x-Math.cos(ang)*26*view.scale,hy=b.y-Math.sin(ang)*26*view.scale;
+   ctx.fillStyle='#9fb6cc';ctx.beginPath();ctx.moveTo(hx,hy);
+   ctx.lineTo(hx-Math.cos(ang-0.4)*L,hy-Math.sin(ang-0.4)*L);
+   ctx.lineTo(hx-Math.cos(ang+0.4)*L,hy-Math.sin(ang+0.4)*L);ctx.closePath();ctx.fill();}
+   // ラベル（中央・小さな白背景の角丸）
+   if(e.label&&e.label!=='関連'&&view.scale>0.5){const mx=(a.x+b.x)/2,my=(a.y+b.y)/2,tw=ctx.measureText(e.label).width+8;
+     ctx.fillStyle='rgba(255,255,255,.92)';roundRect(mx-tw/2,my-8*view.scale,tw,16*view.scale,4);ctx.fill();
+     ctx.fillStyle='#3a6b96';ctx.fillText(e.label,mx,my);}});
+ // nodes（雪アイコン風の丸＋角丸ラベル）
+ nodes.forEach(n=>{const p=S(n),col=colorOf(n.type),r=(7+Math.sqrt(n.deg)*5)*view.scale;
+   // アイコン円
+   ctx.fillStyle=col;ctx.beginPath();ctx.arc(p.x,p.y-r-4*view.scale,r,0,7);ctx.fill();
+   // 雪結晶風の線
+   ctx.strokeStyle='#fff';ctx.lineWidth=1.4*view.scale;const cxp=p.x,cyp=p.y-r-4*view.scale;
+   for(let k=0;k<6;k++){const a=k*Math.PI/3;ctx.beginPath();ctx.moveTo(cxp,cyp);
+     ctx.lineTo(cxp+Math.cos(a)*r*0.7,cyp+Math.sin(a)*r*0.7);ctx.stroke();}
+   // ラベル箱（混雑緩和: ハブ(つながり多)か拡大時、または選択中のみ表示）
+   const showLabel = n.deg >= 3 || view.scale >= 1.1 || n === SELECTED;
+   const by=p.y+2*view.scale;
+   if(showLabel){
+     const label=n.name.length>10?n.name.slice(0,10)+'…':n.name;
+     const tw=ctx.measureText(label).width+14*view.scale,bh=18*view.scale;
+     ctx.fillStyle=col;roundRect(p.x-tw/2,by,tw,bh,4);ctx.fill();
+     ctx.fillStyle='#fff';ctx.fillText(label,p.x,by+bh/2);
+     n._bx=[p.x-tw/2,by,tw,bh];
+     // 種類の小ラベル（箱の上）
+     if(view.scale>0.6){ctx.fillStyle=col;ctx.font=`${8*view.scale}px 'IBM Plex Mono'`;
+       ctx.fillText(n.type,p.x,by-6*view.scale);ctx.font=`${11*view.scale}px 'IBM Plex Mono',monospace`;}
+   } else { n._bx=null; }
+   n._sx=p.x;n._sy=cyp;n._sr=Math.max(r+4,12);});
+ requestAnimationFrame(tick);
+}
+function evXY(e){return {x:e.clientX,y:e.clientY};}
+cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);
+ const m=hit(e);if(m){drag=m;alpha=Math.max(alpha,0.3);}else{pan={x:e.clientX,y:e.clientY};}cv.style.cursor='grabbing';});
+cv.addEventListener('pointermove',e=>{
+ if(drag){drag.x=(e.clientX-innerWidth/2-view.x)/view.scale+innerWidth/2;
+   drag.y=(e.clientY-innerHeight/2-view.y)/view.scale+innerHeight/2;drag.vx=drag.vy=0;}
+ else if(pan){view.x+=e.clientX-pan.x;view.y+=e.clientY-pan.y;pan.x=e.clientX;pan.y=e.clientY;}});
+cv.addEventListener('pointerup',e=>{
+ if(drag){const m=hit(e);if(m===drag)showInfo(m);}
+ drag=null;pan=null;cv.style.cursor='grab';});
+cv.addEventListener('wheel',e=>{e.preventDefault();
+ // カーソル位置を中心にズーム
+ const f=e.deltaY<0?1.12:0.89, ns=Math.max(0.15,Math.min(5,view.scale*f));
+ const mx=e.clientX-innerWidth/2, my=e.clientY-innerHeight/2;
+ view.x=mx-(mx-view.x)*(ns/view.scale); view.y=my-(my-view.y)*(ns/view.scale);
+ view.scale=ns;},{passive:false});
+function hit(e){for(const n of nodes){const dx=e.clientX-n._sx,dy=e.clientY-n._sy;
+  if(dx*dx+dy*dy<=n._sr*n._sr)return n;
+  if(n._bx){const[x,y,w,h]=n._bx;if(e.clientX>=x&&e.clientX<=x+w&&e.clientY>=y&&e.clientY<=y+h)return n;}}return null;}
+function showInfo(n){SELECTED=n;const d=$('info');d.style.display='block';
+ const ins=edges.filter(e=>e.t===n).map(e=>`${esc(e.s.name)} —${esc(e.label)}→`);
+ const outs=edges.filter(e=>e.s===n).map(e=>`—${esc(e.label)}→ ${esc(e.t.name)}`);
+ d.innerHTML=`<span class="x" onclick="$('info').style.display='none'">✕</span>
+  <h3>${esc(n.name)}</h3><div class="t">種類: ${esc(n.type)} ｜ つながり ${n.deg}</div>
+  <div class="t" style="margin-top:8px">${[...ins,...outs].map(esc).join('<br>')||'(関係なし)'}</div>`;}
+function fitView(){
+ if(!nodes.length)return;
+ let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
+ nodes.forEach(n=>{minX=Math.min(minX,n.x);maxX=Math.max(maxX,n.x);
+   minY=Math.min(minY,n.y);maxY=Math.max(maxY,n.y);});
+ const w=maxX-minX||1,h=maxY-minY||1;
+ const cx=innerWidth/2,cy=innerHeight/2;
+ view.scale=Math.max(0.15,Math.min(2,Math.min(innerWidth/(w+220),innerHeight/(h+220))));
+ // グラフ中心(mid)を画面中心に合わせる。S(n)=(n-cx)*scale+cx+view.x より view.x=-(midX-cx)*scale
+ const midX=(minX+maxX)/2, midY=(minY+maxY)/2;
+ view.x=-(midX-cx)*view.scale;
+ view.y=-(midY-cy)*view.scale;
+}
+function zoomBy(f){
+ const cx=innerWidth/2,cy=innerHeight/2;
+ const ns=Math.max(0.15,Math.min(5,view.scale*f));
+ // 画面中心を固定してズーム
+ const sx=cx-cx, sy=cy-cy;  // 中心基準なので0だが式は一般化
+ view.x=sx-(sx-view.x)*(ns/view.scale);
+ view.y=sy-(sy-view.y)*(ns/view.scale);
+ view.scale=ns;
+}
+async function resetGraph(){
+ if(!confirm('すべての記憶を消去します。よろしいですか？'))return;
+ await fetch('/api/memory_clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+ location.reload();
+}
+load();</script></body></html>

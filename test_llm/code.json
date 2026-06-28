@@ -1,0 +1,83 @@
+{
+  "domain": "code",
+  "name": "コード",
+  "questions": [
+    {
+      "q": "Pythonでリスト xs の重複を除き昇順で返す1行式を書け。コードのみ。",
+      "answer": [
+        "sorted(set(xs))",
+        "sorted( set(xs))"
+      ]
+    },
+    {
+      "q": "Pythonで文字列sが回文か判定する1行式を書け。",
+      "answer": [
+        "s == s[::-1]",
+        "s==s[::-1]"
+      ]
+    },
+    {
+      "q": "Pythonでリストxsの最大値と最小値の差を返す1行式を書け。",
+      "answer": [
+        "max(xs) - min(xs)",
+        "max(xs)-min(xs)"
+      ]
+    },
+    {
+      "q": "Pythonで辞書dをvalueの降順でソートしたキーのリストを返す式の核心部分を書け（sortedとlambda使用）。",
+      "answer": [
+        "sorted(d, key=",
+        "key=lambda",
+        "d.get",
+        "reverse=True"
+      ]
+    },
+    {
+      "q": "Pythonで1から100までの合計を返す1行式を書け。",
+      "answer": [
+        "sum(range(1, 101))",
+        "sum(range(1,101))",
+        "5050"
+      ]
+    },
+    {
+      "q": "bashでカレントディレクトリの.txtファイル数を数えるコマンドを書け。コマンドのみ。",
+      "answer": [
+        "ls *.txt",
+        "find . -name",
+        "*.txt | wc"
+      ]
+    },
+    {
+      "q": "bashでファイルaccess.logから404を含む行数を数えるコマンドを書け。",
+      "answer": [
+        "grep -c 404",
+        "grep 404",
+        "| wc -l"
+      ]
+    },
+    {
+      "q": "正規表現でIPv4らしき並びにマッチする最小パターンの一部を書け（\\d と . を使う）。",
+      "answer": [
+        "\\d",
+        "[0-9]"
+      ]
+    },
+    {
+      "q": "SQLでusersテーブルからage>30の件数を取得するクエリを書け。",
+      "answer": [
+        "select count(*) from users where age",
+        "count(*)",
+        "where age > 30"
+      ]
+    },
+    {
+      "q": "Pythonで例外を捕捉する構文のキーワードを2つ、スペース区切りで。",
+      "answer": [
+        "try except",
+        "try, except",
+        "try except"
+      ]
+    }
+  ]
+}

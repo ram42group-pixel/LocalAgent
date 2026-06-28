@@ -1,0 +1,106 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>モデル能力ベクトル</title>
+<style>
+:root{--bg:#101418;--panel:#171D24;--line:#2A333E;--ink:#E8EDF2;--muted:#8C99A8;
+--c1:#6FB3FF;--c2:#7BD8A8;--c3:#FF8A8A;--c4:#C9A8FF;--c5:#FFC56F;--mono:'IBM Plex Mono',monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:sans-serif;padding:22px 16px}
+.wrap{max-width:1000px;margin:0 auto}a.back{color:var(--c1);text-decoration:none;font-size:12px;font-family:var(--mono)}
+h1{font-size:19px;margin:6px 0 4px}h2{font-size:15px;color:var(--c2);margin:20px 0 8px}
+.sub{color:var(--muted);font-size:12px;margin-bottom:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:16px;margin-bottom:14px}
+canvas{display:block;margin:0 auto}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+th,td{border:1px solid var(--line);padding:5px 8px;text-align:left;font-family:var(--mono)}
+th{color:var(--muted)}.empty{color:var(--muted);text-align:center;padding:40px}
+button{padding:7px 12px;border-radius:7px;border:1px solid var(--line);background:#1e2530;color:var(--ink);cursor:pointer;font-size:12px}
+.bar{height:9px;border-radius:3px;background:linear-gradient(90deg,var(--c1),var(--c2))}
+.barwrap{background:#0b0d12;border-radius:3px;overflow:hidden;width:100%}
+</style></head>
+<body><div class="wrap">
+<a class="back" href="/">← コンソール</a>　<a class="back" href="/benchmark">モデル評価 →</a>　<a class="back" href="/scores">成績グラフ →</a>
+<h1>モデル能力ベクトル</h1>
+<div class="sub" id="sub">読み込み中…　<button onclick="consolidate()">記憶を整理（蒸留＋剪定）</button></div>
+<div id="content"></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const TLABEL={reasoning:'推論',planning:'計画',tool_usage:'ツール',security:'ｾｷｭﾘﾃｨ',reflection:'内省',speed:'速度',refusal_rate:'拒否率'};
+const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const COLORS=['--c1','--c2','--c3','--c4','--c5'];
+
+async function load(){
+ let d;try{d=await(await fetch('/api/capabilities')).json();}catch(e){$('sub').textContent='取得失敗';return;}
+ const models=d.models||{};const traits=d.traits||[];
+ const keys=Object.keys(models);
+ if(!keys.length){
+   $('content').innerHTML='<div class="empty">まだ能力データがありません。ベンチや実技課題を実行すると、各モデルの能力ベクトルがここに蓄積されます（使うほど精緻化）。</div>';
+   $('sub').innerHTML='0モデル　<button onclick="consolidate()">記憶を整理</button>';
+   return;
+ }
+ $('sub').innerHTML=`${keys.length}モデル（観測の累積で更新）　<button onclick="consolidate()">記憶を整理（蒸留＋剪定）</button>　<span id="cmsg"></span>`;
+ let h='';
+ // レーダーチャート（最大5モデル重ね）
+ h+='<h2>能力レーダー</h2><div class="card"><canvas id="radar" width="460" height="460"></canvas>';
+ h+='<div style="text-align:center;font-size:12px;margin-top:8px">'+keys.slice(0,5).map((k,i)=>`<span style="color:${cssv(COLORS[i])}">● ${esc(k)}</span>`).join('　')+'</div></div>';
+ // 各モデルのバー
+ h+='<h2>モデル別の能力値</h2>';
+ for(const k of keys){
+   const v=models[k].traits||{};const obs=models[k].observations||0;
+   const conf=models[k].confidence||{};const samp=models[k].samples||{};
+   const oc=Object.keys(conf).length?Math.round(Object.values(conf).reduce((a,b)=>a+b,0)/Object.keys(conf).length*100):0;
+   h+=`<div class="card"><div style="font-family:var(--mono);margin-bottom:6px">${esc(k)} <span style="color:var(--muted)">（観測${obs}回・全体信頼度${oc}%）</span></div>`;
+   h+='<table><tr><th>能力</th><th>値</th><th>信頼度</th><th>標本</th><th></th></tr>';
+   for(const t of traits){
+     const val=v[t]||0;const pct=Math.round(val*100);
+     const c=Math.round((conf[t]||0)*100);const sn=samp[t]||0;
+     const disp=t==='refusal_rate'?`${pct}%↓`:val.toFixed(2);
+     h+=`<tr><td>${TLABEL[t]||t}</td><td>${disp}</td><td>${c}%</td><td>${sn}</td><td><div class="barwrap"><div class="bar" style="width:${pct}%;opacity:${0.4+0.6*(conf[t]||0)}"></div></div></td></tr>`;
+   }
+   h+='</table></div>';
+ }
+ $('content').innerHTML=h;
+ drawRadar(keys.slice(0,5),models,traits.filter(t=>t!=='refusal_rate'&&t!=='speed'));
+}
+
+function drawRadar(keys,models,axes){
+ const cv=$('radar');if(!cv)return;const ctx=cv.getContext('2d');
+ const W=cv.width,H=cv.height,cx=W/2,cy=H/2,R=Math.min(W,H)/2-50;
+ const n=axes.length;
+ ctx.clearRect(0,0,W,H);
+ // グリッド
+ ctx.strokeStyle=cssv('--line');ctx.fillStyle=cssv('--muted');ctx.font='11px sans-serif';
+ for(let ring=1;ring<=4;ring++){
+   ctx.beginPath();
+   for(let i=0;i<=n;i++){const a=Math.PI*2*i/n-Math.PI/2;const r=R*ring/4;
+     const x=cx+r*Math.cos(a),y=cy+r*Math.sin(a);i?ctx.lineTo(x,y):ctx.moveTo(x,y);}
+   ctx.stroke();
+ }
+ // 軸ラベル
+ axes.forEach((t,i)=>{const a=Math.PI*2*i/n-Math.PI/2;
+   const x=cx+(R+20)*Math.cos(a),y=cy+(R+20)*Math.sin(a);
+   ctx.textAlign='center';ctx.fillText(TLABEL[t]||t,x,y);});
+ // 各モデルのポリゴン
+ keys.forEach((k,mi)=>{
+   const v=models[k].traits||{};const col=cssv(COLORS[mi]);
+   ctx.beginPath();
+   axes.forEach((t,i)=>{const a=Math.PI*2*i/n-Math.PI/2;const r=R*(v[t]||0);
+     const x=cx+r*Math.cos(a),y=cy+r*Math.sin(a);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+   ctx.closePath();
+   ctx.strokeStyle=col;ctx.lineWidth=2;ctx.stroke();
+   ctx.fillStyle=col+'22';ctx.globalAlpha=0.25;ctx.fill();ctx.globalAlpha=1;
+ });
+}
+
+async function consolidate(){
+ const el=$('cmsg');if(el)el.textContent='整理中…';
+ try{const r=await(await fetch('/api/consolidate')).json();
+   if(r.ok){const x=r.result;
+     if(el)el.textContent=`整理完了: 重複-${x.removed_duplicates||0} 教訓-${x.removed_lessons||0} スキル化+${(x.promoted||[]).length} 剪定-${x.pruned_lessons||0}`;}
+   else if(el)el.textContent='失敗: '+(r.error||'');
+ }catch(e){if(el)el.textContent='エラー';}
+}
+load();
+</script>
+</body></html>

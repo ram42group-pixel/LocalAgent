@@ -1,0 +1,109 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LocalAgent — Decision Replay</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--line:#283039;--ink:#E8EDF2;--muted:#8C99A8;
+--crit:#ff6b6b;--high:#ff9f43;--med:#feca57;--low:#7BD8A8;--cred:#C9A8FF;--plan:#6FB3FF;
+--mono:'IBM Plex Mono',monospace;--body:'Zen Kaku Gothic New',sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);padding:20px 16px}
+.wrap{max-width:1050px;margin:0 auto}a.back{color:var(--plan);text-decoration:none;font-size:12px;font-family:var(--mono)}
+h1{font-size:19px;margin:6px 0}h2{font-size:14px;color:var(--plan);margin:18px 0 8px;border-bottom:1px solid var(--line);padding-bottom:5px}
+.sub{color:var(--muted);font-size:12px;margin-bottom:12px}
+.bar{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 14px;font-family:var(--mono);font-size:12px}
+.stat b{font-size:18px;color:var(--ink)}
+.run{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 14px;margin-bottom:9px;cursor:pointer}
+.run:hover{border-color:var(--plan)}
+.rid{font-family:var(--mono);font-size:12px;color:var(--plan)}
+.rmeta{color:var(--muted);font-size:11px;margin-top:3px}
+.dec{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:10px}
+.dec.blocked{border-left:3px solid var(--crit)}
+.dec.ok{border-left:3px solid var(--low)}
+.dturn{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.dcmd{font-family:var(--mono);font-size:13px;color:var(--ink);margin:5px 0}
+.drow{font-size:12px;margin:3px 0}.drow b{color:var(--muted);font-weight:500;font-family:var(--mono);font-size:11px}
+.chain{font-family:var(--mono);font-size:11px;color:var(--cred);margin-top:6px}
+.res{font-family:var(--mono);font-size:11px;color:var(--muted);background:#0d1117;border-radius:6px;padding:6px 9px;margin-top:6px;white-space:pre-wrap;max-height:120px;overflow:auto}
+.badge{font-size:10px;font-family:var(--mono);padding:1px 7px;border-radius:8px;margin-left:6px}
+.b-blk{background:#3a1722;color:var(--crit)}.b-ok{background:#16351f;color:var(--low)}
+button{background:#1e2a3a;color:#9bc3ff;border:1px solid #2e3e4a;border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer;font-family:var(--mono)}
+.empty{color:var(--muted);font-size:13px;padding:20px;text-align:center}
+.tool{font-family:var(--mono);font-size:12px;padding:5px 0;border-bottom:1px solid var(--line)}
+</style></head>
+<body><div class="wrap">
+<a class="back" href="/">← 戻る</a>
+<h1>🧭 Decision Replay & Provenance</h1>
+<div class="sub">各 Run の意思決定を1ステップずつ再生。なぜそのコマンドに至ったかを Observation→Decision→Command で追跡。</div>
+
+<div id="metrics" class="bar"></div>
+
+<div id="view">
+  <h2>実行履歴（Run一覧）</h2>
+  <div id="runs"><div class="empty">読み込み中…</div></div>
+  <h2>Tool メトリクス</h2>
+  <div id="tools"><div class="empty">—</div></div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+async function j(u){try{const r=await fetch(u);return await r.json()}catch(e){return{}}}
+
+async function loadRuns(){
+  const d=await j('/api/replay/runs');
+  const runs=d.runs||[];
+  const el=$('#runs');
+  if(!runs.length){el.innerHTML='<div class="empty">まだ記録がありません。診断を実行すると蓄積されます。</div>';return}
+  el.innerHTML=runs.map(r=>`<div class="run" onclick="openRun('${r.trace_id}')">
+    <div class="rid">${r.trace_id} <span class="badge ${r.status==='done'?'b-ok':'b-blk'}">${r.status||''}</span></div>
+    <div class="rmeta">${(r.primary_target||'—')} ／ ${r.mode||''} ／ ${(r.request||'').slice(0,60)}</div>
+  </div>`).join('');
+}
+async function loadTools(){
+  const d=await j('/api/replay/tool_metrics');
+  const t=d.tools||[];const el=$('#tools');
+  if(!t.length){el.innerHTML='<div class="empty">—</div>';return}
+  el.innerHTML=t.map(x=>`<div class="tool">${x.tool} ／ 利用${x.uses} 成功率${(x.success_rate*100).toFixed(0)}% エラー率${(x.error_rate*100).toFixed(0)}% 平均${x.avg_ms}ms</div>`).join('');
+}
+async function openRun(tid){
+  const d=await j('/api/replay/run?trace_id='+tid);
+  const m=await j('/api/replay/run_metrics?trace_id='+tid);
+  const decs=d.decisions||[];
+  $('#metrics').innerHTML=`
+    <div class="stat"><b>${m.decisions||0}</b> 判断</div>
+    <div class="stat"><b>${((m.decision_success_rate||0)*100).toFixed(0)}%</b> 成功率</div>
+    <div class="stat"><b>${((m.hallucination_rate||0)*100).toFixed(0)}%</b> 幻覚率</div>
+    <div class="stat"><b>${m.scope_violations||0}</b> Scope違反</div>
+    <div class="stat"><b>${m.strategy_switches||0}</b> 戦略切替</div>`;
+  $('#view').innerHTML=`<a class="back" href="#" onclick="boot();return false">← Run一覧へ</a>
+    <h2>Replay: ${tid}</h2>`+
+    (decs.length?decs.map(x=>{
+      const cls=x.blocked?'blocked':'ok';
+      const badge=x.blocked?'<span class="badge b-blk">BLOCKED</span>':'<span class="badge b-ok">OK</span>';
+      return `<div class="dec ${cls}">
+        <div class="dturn">手 ${x.turn} ／ ${x.decision_id} ${badge}</div>
+        <div class="dcmd">$ ${esc(x.command||'(なし)')}</div>
+        ${x.planner_reason?`<div class="drow"><b>理由</b> ${esc(x.planner_reason)}</div>`:''}
+        ${x.chosen_hypothesis?`<div class="drow"><b>仮説</b> ${esc(x.chosen_hypothesis)}</div>`:''}
+        ${x.strategy?`<div class="drow"><b>戦略</b> ${esc(x.strategy)}</div>`:''}
+        ${x.lesson?`<div class="drow"><b>教訓</b> ${esc(x.lesson)}</div>`:''}
+        ${x.hallucination?`<div class="drow" style="color:var(--crit)"><b>幻覚</b> ${esc(x.hallucination)}</div>`:''}
+        <div class="chain" onclick="chain('${x.decision_id}',this)">▸ 由来チェーンを表示</div>
+        ${x.result?`<div class="res">${esc((x.result||'').slice(0,400))}</div>`:''}
+      </div>`}).join(''):'<div class="empty">判断記録がありません</div>');
+}
+async function chain(did,el){
+  const d=await j('/api/replay/chain?decision_id='+did);
+  const f=(d.forward||[]).map(s=>s.stage+(s.value?(':'+String(s.value).slice(0,40)):(s.ids?(':'+JSON.stringify(s.ids).slice(0,40)):''))).join('  →  ');
+  el.outerHTML='<div class="chain">'+(f||'(チェーンなし)')+'</div>';
+}
+function esc(s){return String(s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+function boot(){
+  $('#metrics').innerHTML='';
+  $('#view').innerHTML=`<h2>実行履歴（Run一覧）</h2><div id="runs"><div class="empty">読み込み中…</div></div>
+    <h2>Tool メトリクス</h2><div id="tools"><div class="empty">—</div></div>`;
+  loadRuns();loadTools();
+}
+boot();
+</script>
+</div></body></html>

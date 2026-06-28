@@ -1,0 +1,161 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>モデル成績グラフ</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#101418;--panel:#171D24;--line:#2A333E;--ink:#E8EDF2;--muted:#8C99A8;
+--reason:#6FB3FF;--code:#7BD8A8;--security:#FF8A8A;--speed:#C9A8FF;--mono:'IBM Plex Mono',monospace;--body:'Zen Kaku Gothic New',sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);padding:22px 16px}
+.wrap{max-width:1000px;margin:0 auto}a.back{color:var(--reason);text-decoration:none;font-size:12px;font-family:var(--mono)}
+h1{font-size:19px;margin:6px 0 4px}h2{font-size:15px;margin:22px 0 8px;color:var(--code)}
+.sub{color:var(--muted);font-size:12px;margin-bottom:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:16px;margin-bottom:14px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;font-family:var(--mono);margin-bottom:10px}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+canvas{width:100%;max-width:100%;display:block}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+th,td{border:1px solid var(--line);padding:5px 8px;text-align:left;font-family:var(--mono)}
+th{color:var(--muted)}
+.empty{color:var(--muted);text-align:center;padding:40px;font-size:13px}
+.badge{font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:4px;background:#1e2530}
+</style></head>
+<body><div class="wrap">
+<a class="back" href="/">← コンソール</a>　<a class="back" href="/benchmark">モデル評価 →</a>　<a class="back" href="/experts">専門家設定 →</a>
+<h1>モデル成績グラフ</h1>
+<div class="sub" id="sub">読み込み中…</div>
+<div id="content"></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const DOMS=[['reason','推論','--reason'],['code','コード','--code'],['security','ｾｷｭﾘﾃｨ','--security'],['speed','速度','--speed']];
+const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+async function load(){
+ let d;try{d=await(await fetch('/api/bench_results')).json();}catch(e){$('sub').textContent='取得失敗';return;}
+ const models=d.models||[];
+ if(!models.length){
+   $('sub').textContent='まだベンチ結果がありません';
+   $('content').innerHTML='<div class="empty">モデル評価ページでベンチを実行すると、ここに各モデルの成績グラフが表示されます。</div>';
+   return;
+ }
+ $('sub').textContent=`${models.length}モデル ｜ 最終更新: ${esc(d.updated||'-')}`;
+ let h='';
+ // ① 総合スコアの棒グラフ
+ h+='<h2>① 総合スコア（全分野の合計）</h2><div class="card"><canvas id="cTotal"></canvas></div>';
+ // ② 分野別スコア（積み上げ風の横棒）
+ h+='<h2>② 分野別スコア</h2>';
+ h+='<div class="card"><div class="legend">'+DOMS.map(([k,lbl,v])=>`<span><span class="sw" style="background:${cssv(v)}"></span>${lbl}</span>`).join('')+'</div><canvas id="cDomain"></canvas></div>';
+ // ③ 得意分野の表
+ h+='<h2>③ 各モデルの得意分野・拒否数</h2><div class="card"><table id="tbl"><tr><th>順位</th><th>モデル</th><th>得意分野</th><th>推論</th><th>コード</th><th>ｾｷｭﾘﾃｨ</th><th>速度</th><th>拒否</th><th>速度ms</th></tr>';
+ const dl={reason:'推論',code:'コード',security:'ｾｷｭﾘﾃｨ',speed:'速度'};
+ models.forEach((m,i)=>{
+   const s=m.scores||{};
+   // 拒否の表示: both比較があれば 通常→ペンテスト、なければ total_refused
+   let refTxt;
+   if(m.normal_refused!=null&&m.pentest_refused!=null){
+     refTxt=`通常${m.normal_refused} → PT${m.pentest_refused}`;
+   }else{
+     refTxt=m.total_refused||0;
+   }
+   h+=`<tr><td>${i+1}</td><td>${esc(m.key)}</td><td><span class="badge">${dl[m.best_domain]||m.best_domain||'-'}</span></td>
+     <td>${s.reason??'-'}</td><td>${s.code??'-'}</td><td>${s.security??'-'}</td><td>${s.speed??'-'}</td><td>${refTxt}</td><td>${m.avg_ms||'-'}</td></tr>`;
+ });
+ h+='</table></div>';
+ // ④ 拒否数グラフ（拒否があるモデルのみ）
+ const hasRef=models.some(m=>(m.total_refused||0)>0||(m.normal_refused||0)>0);
+ if(hasRef){
+   h+='<h2>④ 回答拒否数（少ないほどペンテスト向き）</h2><div class="card"><canvas id="cRefuse"></canvas></div>';
+ }
+ $('content').innerHTML=h;
+ drawTotal(models);
+ drawDomain(models);
+ if(hasRef)drawRefuse(models);
+}
+
+function drawRefuse(models){
+ const cv=$('cRefuse');if(!cv)return;
+ const rowH=30,top=10,bot=10;
+ const [ctx,w,h]=setupCanvas(cv,top+bot+models.length*rowH);
+ const labelW=Math.min(220,w*0.32),barX=labelW+8,barW=w-barX-60;
+ // 最大拒否数
+ const vals=models.map(m=>Math.max(m.total_refused||0,m.normal_refused||0,m.pentest_refused||0));
+ const maxV=Math.max(...vals,1);
+ ctx.font='12px '+cssv('--mono')+', monospace';ctx.textBaseline='middle';
+ models.forEach((m,i)=>{
+   const y=top+i*rowH+rowH/2;
+   ctx.fillStyle=cssv('--ink');ctx.textAlign='right';
+   ctx.fillText(trunc(m.key,labelW,ctx),labelW,y);
+   const both=(m.normal_refused!=null&&m.pentest_refused!=null);
+   if(both){
+     // 通常（赤）とペンテスト（紫）を上下に細く
+     const n=m.normal_refused,p=m.pentest_refused;
+     ctx.fillStyle=cssv('--security');roundRect(ctx,barX,y-9,Math.max(barW*(n/maxV),0),8,2);ctx.fill();
+     ctx.fillStyle=cssv('--speed');roundRect(ctx,barX,y+1,Math.max(barW*(p/maxV),0),8,2);ctx.fill();
+     ctx.fillStyle=cssv('--muted');ctx.textAlign='left';
+     ctx.fillText(`通常${n} / PT${p}`,barX+barW*(Math.max(n,p)/maxV)+6,y);
+   }else{
+     const v=m.total_refused||0;
+     ctx.fillStyle=cssv('--security');roundRect(ctx,barX,y-9,Math.max(barW*(v/maxV),v?1:0),18,3);ctx.fill();
+     ctx.fillStyle=cssv('--ink');ctx.textAlign='left';
+     ctx.fillText(String(v),barX+barW*(v/maxV)+6,y);
+   }
+ });
+}
+
+function setupCanvas(cv,h){
+ const dpr=devicePixelRatio||1;const w=cv.clientWidth||600;
+ cv.width=w*dpr;cv.height=h*dpr;cv.style.height=h+'px';
+ const ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);
+ return [ctx,w,h];
+}
+
+function drawTotal(models){
+ const cv=$('cTotal');const rowH=30, top=10, bot=10;
+ const [ctx,w,h]=setupCanvas(cv, top+bot+models.length*rowH);
+ const labelW=Math.min(220, w*0.32), barX=labelW+8, barW=w-barX-50;
+ const maxV=Math.max(...models.map(m=>m.total_score),0.001);
+ ctx.font='12px '+cssv('--mono')+', monospace';ctx.textBaseline='middle';
+ models.forEach((m,i)=>{
+   const y=top+i*rowH+rowH/2;
+   ctx.fillStyle=cssv('--ink');ctx.textAlign='right';
+   ctx.fillText(trunc(m.key, labelW, ctx), labelW, y);
+   const bw=barW*(m.total_score/maxV);
+   const grad=ctx.createLinearGradient(barX,0,barX+bw,0);
+   grad.addColorStop(0,cssv('--reason'));grad.addColorStop(1,cssv('--code'));
+   ctx.fillStyle=grad;roundRect(ctx,barX,y-9,Math.max(bw,1),18,4);ctx.fill();
+   ctx.fillStyle=cssv('--ink');ctx.textAlign='left';
+   ctx.fillText(m.total_score.toFixed(2), barX+bw+6, y);
+ });
+}
+
+function drawDomain(models){
+ const cv=$('cDomain');const rowH=34, top=10, bot=10;
+ const [ctx,w,h]=setupCanvas(cv, top+bot+models.length*rowH);
+ const labelW=Math.min(220,w*0.32), barX=labelW+8, barW=w-barX-20;
+ ctx.font='12px '+cssv('--mono')+', monospace';ctx.textBaseline='middle';
+ models.forEach((m,i)=>{
+   const y=top+i*rowH+rowH/2;
+   ctx.fillStyle=cssv('--ink');ctx.textAlign='right';
+   ctx.fillText(trunc(m.key,labelW,ctx),labelW,y);
+   // 各分野を横に並べた積み上げ（合計4でmaxとして割る）
+   let x=barX;const seg=barW/4;
+   DOMS.forEach(([k,lbl,v])=>{
+     const sc=(m.scores&&m.scores[k])||0;
+     ctx.fillStyle=cssv(v);
+     roundRect(ctx,x,y-9,Math.max(seg*sc,0),18,3);ctx.fill();
+     x+=seg+2;
+   });
+ });
+}
+
+function roundRect(ctx,x,y,w,h,r){r=Math.min(r,w/2,h/2);ctx.beginPath();
+ ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
+ ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function trunc(s,maxW,ctx){let t=s;while(ctx.measureText(t).width>maxW&&t.length>3){t=t.slice(0,-2);}return t===s?s:t+'…';}
+
+addEventListener('resize',()=>{load();});
+load();
+</script>
+</body></html>

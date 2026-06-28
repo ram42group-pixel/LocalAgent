@@ -1,0 +1,55 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>記憶ビューア</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#101418;--panel:#171D24;--line:#2A333E;--ink:#E8EDF2;--muted:#8C99A8;--faint:#5B6877;
+--plan:#6FB3FF;--sum:#7BD8A8;--code:#F2A65A;--mono:'IBM Plex Mono',ui-monospace,Consolas,monospace;--body:'Zen Kaku Gothic New',sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);padding:24px 16px;line-height:1.55}
+.wrap{max-width:980px;margin:0 auto}
+a.back{color:var(--plan);text-decoration:none;font-size:12px;font-family:var(--mono)}
+h1{font-size:20px;margin:6px 0 2px}.sub{color:var(--muted);font-size:12px;font-family:var(--mono);margin-bottom:18px}
+.bar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+input#q{flex:1;min-width:200px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 11px;font-size:13px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px 14px;margin-bottom:10px;border-left:3px solid var(--c,var(--sum))}
+.card .top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.card .goal{font-weight:700;font-size:14px}
+.card .obj{color:var(--muted);font-size:12px;font-family:var(--mono);margin:2px 0 6px}
+.card .sum{font-size:13px;white-space:pre-wrap}
+.card .meta{margin-top:7px;font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+.tag{display:inline-block;background:#10161d;border:1px solid var(--line);border-radius:5px;padding:1px 7px;margin-right:5px;color:var(--plan)}
+.ok{color:var(--sum)}.ng{color:var(--code)}
+.empty{color:var(--muted);font-family:var(--mono);padding:30px;text-align:center}
+</style></head><body><div class="wrap">
+<a class="back" href="/">← コンソールへ戻る</a>
+<h1>記憶ビューア（長期記憶 / SQLite）</h1>
+<div class="sub" id="sub">読み込み中…</div>
+<div class="bar"><input id="q" placeholder="ゴール・目的・要約・タグで絞り込み"><button onclick="render()">絞り込み</button></div>
+<div id="list"></div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+let DATA=[];
+async function load(){
+ const d=await(await fetch('/api/memory')).json();
+ DATA=d.memories||[];
+ $('sub').textContent=`全 ${d.count} 件`;
+ render();
+}
+function render(){
+ const q=$('q').value.trim().toLowerCase();
+ const rows=DATA.filter(m=>!q||[m.goal,m.objective,m.summary,(m.tags||[]).join(' ')].join(' ').toLowerCase().includes(q));
+ if(!rows.length){$('list').innerHTML='<div class="empty">該当する記憶はありません</div>';return;}
+ $('list').innerHTML=rows.map(m=>`
+  <div class="card" style="--c:${m.success?'var(--sum)':'var(--code)'}">
+   <div class="top"><span class="goal">${esc(m.goal)}</span>
+    <span class="${m.success?'ok':'ng'}">${m.success?'✓ 成功':'△ 未完了'}</span></div>
+   <div class="obj">目的: ${esc(m.objective)||'(なし)'}</div>
+   <div class="sum">${esc(m.summary)}</div>
+   <div class="meta">${(m.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('')}
+    ｜ #${m.id} ｜ ${esc(m.created_at)}</div>
+  </div>`).join('');
+}
+load();
+</script></div></body></html>

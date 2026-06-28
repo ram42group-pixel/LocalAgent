@@ -1,0 +1,511 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>モデル評価（ベンチマーク）</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#101418;--panel:#171D24;--line:#2A333E;--ink:#E8EDF2;--muted:#8C99A8;
+--plan:#6FB3FF;--sum:#7BD8A8;--fast:#C9A8FF;--warn:#FFB36F;--mono:'IBM Plex Mono',monospace;--body:'Zen Kaku Gothic New',sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);padding:22px 16px}
+.wrap{max-width:1000px;margin:0 auto}a.back{color:var(--plan);text-decoration:none;font-size:12px;font-family:var(--mono)}
+h1{font-size:19px;margin:6px 0 4px}h2{font-size:15px;margin:20px 0 8px;color:var(--sum)}
+.sub{color:var(--muted);font-size:12px;margin-bottom:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 16px;margin-bottom:12px}
+button{background:#1e2530;color:var(--plan);border:1px solid var(--line);border-radius:7px;padding:7px 13px;font-size:12px;cursor:pointer;font-family:var(--mono);margin-right:6px}
+button.go{color:var(--sum)}button.warn{color:var(--warn)}
+.lbl{font-size:11px;color:var(--muted);font-family:var(--mono)}
+input,textarea{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-family:var(--mono);font-size:12px}
+.status{font-size:12px;color:var(--sum);font-family:var(--mono);margin-top:8px;white-space:pre-wrap;line-height:1.6}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+th,td{border:1px solid var(--line);padding:5px 8px;text-align:left;font-family:var(--mono)}
+th{color:var(--muted)}
+.chrow{display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;align-items:center}
+.chrow input{flex:1;min-width:120px}
+.note{font-size:11px;color:var(--warn);font-family:var(--mono);margin-top:4px}
+</style></head>
+<body><div class="wrap">
+<a class="back" href="/">← コンソールに戻る</a>　<a class="back" href="/experts">専門家設定 →</a>　<a class="back" href="/scores">📊 成績グラフ →</a>　<a class="back" href="/capabilities">🧬 能力ベクトル →</a>
+<h1>モデル評価（ベンチマーク）</h1>
+<div class="sub">各ollamaモデルの実力を測り、結果を専門家設定に反映します。実行はこのページで完結し、
+本体のプロジェクトとは<b>テスト結果（割り当て）のみ共有</b>します。モデルは1つずつ逐次評価します。</div>
+
+<h2>① 学科ベンチ（推論 / コード / セキュリティ / 速度）</h2>
+<div class="card">
+  <div class="lbl">テスト対象モデルを選び、▶で個別に、または下のボタンで一括実行。
+  クラウドに同名モデルがある場合は手動でプロバイダ指定して追加できます（クラウドは並列実行）。</div>
+  <div class="chrow" style="margin-top:8px">
+    <label><input type="checkbox" id="src_builtin" checked> 固定問題</label>
+    <label><input type="checkbox" id="src_llm"> LLM生成</label>
+    <label><input type="checkbox" id="src_public"> 公開ベンチ検索</label>
+    <label><input type="checkbox" id="src_files"> test_llmから選択</label>
+    <button onclick="editQuestions()">問題を編集</button>
+  </div>
+  <div id="testsets" style="margin-top:6px;display:none">
+    <span class="lbl">test_llm フォルダのテストセット（分野別・チェックで使用）:</span>
+    <div id="testsets_list" style="margin-top:4px"></div>
+    <div class="note">test_llm/ フォルダに JSON を置くと追加できます。形式: {"domain":"分野","name":"表示名","questions":[{"q":"問題","answer":["正解"]}]}</div>
+  </div>
+  <div style="margin-top:10px"><span class="lbl">テスト対象（チェックで選択 / ▶で個別実行）</span></div>
+  <div id="targets" style="margin-top:6px"><span class="lbl">モデル読込中…</span></div>
+  <div class="chrow" style="margin-top:8px">
+    <span class="lbl">追加:</span>
+    <select id="add_prov" onchange="fillAddModels()">
+      <option value="ollama">ollama</option>
+      <option value="groq">groq</option>
+      <option value="cerebras">cerebras</option>
+      <option value="open_router">open_router</option>
+      <option value="google_studio">google_studio</option>
+      <option value="mistral">mistral</option>
+    </select>
+    <select id="add_model_sel" onchange="onAddModelSel()" style="min-width:170px"></select>
+    <input id="add_model" placeholder="または手入力" style="flex:1;min-width:120px">
+    <button onclick="addTarget()">＋追加</button>
+  </div>
+  <button class="go" onclick="runSelected()">🧪 選択したモデルを一括テストして割り当て</button>
+  <label style="margin-left:10px;font-size:12px"><input type="checkbox" id="show_detail" checked> 詳細（思考・回答）を表示</label>
+  <div class="chrow" style="margin-top:8px">
+    <span class="lbl">システムプロンプト:</span>
+    <label><input type="radio" name="bmode" value="normal" checked> 通常</label>
+    <label><input type="radio" name="bmode" value="pentest"> ペンテスト文脈</label>
+    <label><input type="radio" name="bmode" value="both"> 両方で比較（拒否差を見る）</label>
+  </div>
+  <div class="status" id="bench_status"></div>
+  <div id="bench_detail" style="margin-top:10px"></div>
+</div>
+
+<h2>② 実技課題（フラグ式・侵入してファイル取得）</h2>
+<div class="card">
+  <div class="lbl">あなたが構築・所有する隔離テスト環境のみを対象にしてください。
+  対象・ヒント・正解フラグを登録し、各モデルにエージェントとして侵入・取得させます。
+  出力にフラグ文字列が現れたら成功（フラグ取得率で攻撃系ツールへ実力者を割当）。</div>
+  <div id="challenges" style="margin-top:10px"></div>
+  <div class="chrow" style="margin-top:8px">
+    <span class="lbl">練習アプリから追加:</span>
+    <select id="preset_sel" style="min-width:240px"><option value="">（リストから選択）</option></select>
+    <button onclick="addPreset()">＋選択を追加</button>
+    <button onclick="addAllPresets()">＋全部追加</button>
+  </div>
+  <button onclick="addChallenge()">＋ 空の課題を追加</button>
+  <button onclick="saveChallenges()">課題を保存</button>
+  <div style="margin-top:10px"><span class="lbl">テスト対象モデル（チェックで選択 / ▶で個別実行）</span></div>
+  <div id="ctf_targets" style="margin-top:6px"><span class="lbl">学科ベンチと共通の対象リストを使用</span></div>
+  <div class="chrow" style="margin-top:6px">
+    <span class="lbl">追加:</span>
+    <select id="ctf_add_prov" onchange="fillCtfAddModels()">
+      <option value="ollama">ollama</option><option value="groq">groq</option>
+      <option value="cerebras">cerebras</option><option value="open_router">open_router</option>
+      <option value="google_studio">google_studio</option><option value="mistral">mistral</option>
+    </select>
+    <select id="ctf_add_model_sel" onchange="onCtfAddSel()" style="min-width:170px"></select>
+    <input id="ctf_add_model" placeholder="または手入力" style="flex:1;min-width:120px">
+    <button onclick="addCtfTarget()">＋追加</button>
+  </div>
+  <label style="font-size:12px"><input type="checkbox" id="ctf_show_detail" checked> 詳細（思考・コマンド）を表示</label>
+  <button class="go" onclick="runCtf()">🚩 選択モデルで実技課題を実行して割り当て</button>
+  <div class="note">※ 実技は完全自律（exploitまで実行）で走ります。対象が自分の環境であることを必ず確認してください。</div>
+  <div class="status" id="ctf_status"></div>
+  <div id="ctf_intervene" style="display:none;margin-top:10px;padding:10px;border:1px solid var(--security,#ff8a8a);border-radius:8px;background:#1a1418">
+    <div style="font-size:12px;color:var(--security,#ff8a8a);margin-bottom:6px">🎙 実行中の介入（軌道修正）— 詳細を見て違う方向なら指示を送れます</div>
+    <div class="chrow">
+      <input id="intervene_msg" placeholder="例: SQLiでなくXSSを試して / ポート8080も見て / 偵察に戻れ" style="flex:1;min-width:160px"
+             onkeydown="if(event.key==='Enter')sendIntervene()">
+      <button class="go" onclick="sendIntervene()">送信</button>
+      <button class="warn" onclick="stopAgent()">⏹ 停止</button>
+    </div>
+    <div id="intervene_log" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
+  </div>
+  <div id="ctf_detail" style="margin-top:10px"></div>
+</div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/"/g,'&quot;');
+// 詳細(<details>)の開閉状態を再レンダリングをまたいで保持する。
+// data-dkey を安定キーに使い、再描画前に開いていたものを再描画後に開き直す。
+function captureOpen(container){
+  const open=new Set();
+  if(!container)return open;
+  container.querySelectorAll('details[data-dkey]').forEach(d=>{
+    if(d.open)open.add(d.getAttribute('data-dkey'));
+  });
+  return open;
+}
+function restoreOpen(container,open){
+  if(!container||!open)return;
+  container.querySelectorAll('details[data-dkey]').forEach(d=>{
+    if(open.has(d.getAttribute('data-dkey')))d.open=true;
+  });
+}
+let CH=[];
+
+// ---- 学科ベンチ ----
+let TARGETS=[];   // [{provider, model, sel}]
+let ALLMODELS={}; // {provider: [models]}  追加用ドロップダウンの元データ
+
+async function loadModels(){
+ try{
+  const d=await(await fetch('/api/all_models')).json();
+  const prov=d.providers||{};
+  ALLMODELS={};
+  for(const p in prov){ ALLMODELS[p]=(prov[p]&&prov[p].models)||[]; }
+  const oll=ALLMODELS.ollama||[];
+  TARGETS=oll.map(m=>({provider:'ollama',model:m,sel:true}));
+ }catch(e){ALLMODELS={};TARGETS=[];}
+ renderTargets();
+ fillAddModels();
+ syncCtfTargets();
+}
+function fillAddModels(){
+ const p=$('add_prov').value;
+ const models=ALLMODELS[p]||[];
+ const sel=$('add_model_sel');
+ sel.innerHTML='<option value="">（リストから選択）</option>'+
+   models.map(m=>`<option value="${m}">${m}</option>`).join('');
+}
+function onAddModelSel(){
+ // リストで選んだら手入力欄にも反映（編集も可能に）
+ const v=$('add_model_sel').value;
+ if(v) $('add_model').value=v;
+}
+function renderTargets(){
+ if(!TARGETS.length){$('targets').innerHTML='<span class="lbl">対象がありません。手動で追加してください。</span>';return;}
+ $('targets').innerHTML=TARGETS.map((t,i)=>`
+   <div class="chrow">
+     <label style="flex:1"><input type="checkbox" ${t.sel?'checked':''} onchange="TARGETS[${i}].sel=this.checked">
+       <span style="font-family:var(--mono)">${t.provider} / ${t.model}</span></label>
+     <button class="go" title="このモデルだけテスト" onclick="runOne(${i})">▶</button>
+     <button class="warn" onclick="rmTarget(${i})">✕</button>
+   </div>`).join('');
+}
+function addTarget(){
+ const p=$('add_prov').value;
+ // 手入力を優先、空ならドロップダウンの選択値
+ const m=($('add_model').value.trim())||$('add_model_sel').value;
+ if(!m){alert('モデルをリストから選ぶか、名前を入力してください');return;}
+ TARGETS.push({provider:p,model:m,sel:true});
+ $('add_model').value='';
+ $('add_model_sel').value='';
+ renderTargets();
+}
+function rmTarget(i){TARGETS.splice(i,1);renderTargets();}
+
+function sources(){
+ const s=[];
+ if($('src_builtin').checked)s.push('builtin');
+ if($('src_llm').checked)s.push('llm');
+ if($('src_public').checked)s.push('public');
+ if($('src_files').checked)s.push('files');
+ return s;
+}
+
+let TESTSETS=[];
+async function loadTestSets(){
+ try{const d=await(await fetch('/api/test_sets')).json();TESTSETS=d.sets||[];}catch(e){TESTSETS=[];}
+ $('testsets_list').innerHTML=TESTSETS.map((t,i)=>
+   `<label style="margin-right:12px"><input type="checkbox" class="tsel" value="${t.file}" checked> ${t.name}（${t.domain}・${t.count}問）</label>`).join('')
+   ||'<span class="lbl">テストセットがありません</span>';
+}
+function selectedTestFiles(){
+ return Array.from(document.querySelectorAll('.tsel:checked')).map(c=>c.value);
+}
+// test_llm選択チェックでセット一覧の表示切替
+document.addEventListener('change',e=>{
+ if(e.target&&e.target.id==='src_files'){
+   $('testsets').style.display=e.target.checked?'block':'none';
+   if(e.target.checked&&!TESTSETS.length)loadTestSets();
+ }
+});
+
+let benchES=null;
+async function runTargets(targets,label){
+ const src=sources();
+ if(!src.length){alert('出題元を1つ以上選んでください');return;}
+ const body={sources:src,targets};
+ if(src.includes('files'))body.test_files=selectedTestFiles();
+ const modeEl=document.querySelector('input[name="bmode"]:checked');
+ body.mode=modeEl?modeEl.value:'normal';
+ if(benchES){benchES.close();benchES=null;}
+ $('bench_status').innerHTML=`実行中… (${label})  開始しています…`;
+ try{
+  const r=await(await fetch('/api/benchmark_models',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)})).json();
+  if(!r.ok){$('bench_status').textContent='失敗: '+(r.error||'');return;}
+  // 進捗を SSE で受信
+  const total=r.total||targets.length;
+  const prog={};   // key -> 状態テキスト
+  const order=[];  // 表示順
+  function renderProg(doneN){
+    let lines=[`<div>進捗: ${doneN||0} / ${total} モデル完了</div>`];
+    lines.push('<table><tr><th>モデル</th><th>状態</th><th>推論</th><th>コード</th><th>ｾｷｭﾘﾃｨ</th><th>速度ms</th><th>拒否</th></tr>');
+    for(const k of order){const p=prog[k];
+      lines.push(`<tr><td>${k}</td><td>${p.state}</td><td>${p.reason??'-'}</td><td>${p.code??'-'}</td><td>${p.security??'-'}</td><td>${p.ms??'-'}</td><td>${p.refused??'-'}</td></tr>`);}
+    lines.push('</table>');
+    $('bench_status').innerHTML=lines.join('');
+  }
+  const es=new EventSource('/api/stream?run_id='+r.run_id);
+  benchES=es;
+  const DOM_LABEL={reason:'推論',code:'コード',security:'ｾｷｭﾘﾃｨ',speed:'速度'};
+  const detail={};   // key -> [質問詳細...]
+  $('bench_detail').innerHTML='';
+  function renderDetail(){
+    if(!$('show_detail').checked){$('bench_detail').innerHTML='';return;}
+    const _open=captureOpen($('bench_detail'));   // 開いている詳細を記憶
+    let h='';
+    for(const k of order){
+      const qs=detail[k]||[];
+      if(!qs.length)continue;
+      // 分野ごとの正答数サマリ
+      const byDom={};
+      for(const q of qs){(byDom[q.domain]=byDom[q.domain]||{c:0,t:0}); byDom[q.domain].t++; if(q.correct)byDom[q.domain].c++;}
+      const summary=Object.entries(byDom).map(([d,v])=>`${DOM_LABEL[d]||d} ${v.c}/${v.t}`).join('  ');
+      h+=`<details data-dkey="m:${esc(k)}" style="margin-bottom:8px"><summary style="cursor:pointer;font-family:var(--mono);color:var(--plan)">${k}（${qs.length}問）　${summary}</summary>`;
+      for(const q of qs){
+        const mark=q.correct?'<span style="color:var(--sum)">✓</span>':(q.refused?'<span style="color:var(--fast)">⊘拒否</span>':'<span style="color:var(--warn)">✗</span>');
+        const errBadge=q.error?` <span style="color:var(--warn)">[エラー: ${esc(q.error)}]</span>`:'';
+        const modeBadge=q.mode==='pentest'?' <span class="badge" style="color:var(--security)">PT</span>':'';
+        h+=`<div style="border:1px solid var(--line);border-radius:6px;padding:8px;margin:6px 0;font-size:12px">
+          <div>${mark}${modeBadge} <span class="lbl">[${DOM_LABEL[q.domain]||q.domain} ${q.pos}/${q.of}]</span> <b>${esc(q.question)}</b> <span class="lbl">(${q.ms}ms${q.think_len?'・思考'+q.think_len+'字':''})</span>${errBadge}</div>`;
+        if(q.thinking)h+=`<details data-dkey="t:${esc(k)}:${q.pos}" style="margin:4px 0"><summary style="color:var(--fast);cursor:pointer">💭 思考を表示（${q.think_len}字）</summary><div style="color:var(--muted);white-space:pre-wrap;padding:4px 8px;border-left:2px solid var(--fast)">${esc(q.thinking)}</div></details>`;
+        h+=`<div>回答: <span style="font-family:var(--mono)">${esc(q.answer)||'(空)'}</span></div>
+            <div class="lbl">期待: ${esc((q.expected||[]).join(' / '))}</div></div>`;
+      }
+      h+='</details>';
+    }
+    $('bench_detail').innerHTML=h;
+    restoreOpen($('bench_detail'),_open);          // 開いていた詳細を開き直す
+  }
+  es.onmessage=(ev)=>{
+    let m;try{m=JSON.parse(ev.data);}catch(e){return;}
+    const p=m.payload||{};
+    // 表示キーにモードを含めて、両方モードで通常/ペンテストを分離する
+    const dkey=(e)=>{
+      const base=e.key||((e.provider||'ollama')+'/'+e.model);
+      return e.mode==='pentest'?base+' 〔PT〕':base;
+    };
+    if(m.event==='bench'){
+      const e=p;
+      if(e.type==='bench_start'){
+        const k=dkey(e);
+        if(!(k in prog)){prog[k]={state:'評価中…'};order.push(k);detail[k]=[];}
+        else prog[k].state='評価中…';
+        renderProg(e.done);
+      }else if(e.type==='bench_question'){
+        const k=dkey(e);
+        if(!detail[k]){detail[k]=[];if(!order.includes(k))order.push(k);if(!prog[k])prog[k]={state:''};}
+        detail[k].push(e);
+        if(prog[k])prog[k].state=`${DOM_LABEL[e.domain]||e.domain} ${e.pos}/${e.of}問目（${e.correct?'✓':e.refused?'⊘':'✗'}）`;
+        renderProg();renderDetail();
+      }else if(e.type==='bench_domain'){
+        const k=dkey(e);
+        if(prog[k]){prog[k][e.domain]=e.score;prog[k].state=`${DOM_LABEL[e.domain]||e.domain} ${e.correct}/${e.total}正解`;renderProg();}
+      }else if(e.type==='bench_done'){
+        const k=dkey(e);
+        if(prog[k]){const s=e.scores||{};
+          Object.assign(prog[k],{state:'✓完了',reason:s.reason,code:s.code,security:s.security,ms:e.avg_ms,refused:e.refused});}
+        renderProg(e.done);
+      }
+    }else if(m.event==='bench_result'){
+      if(!p.ok){$('bench_status').innerHTML+='<div style="color:var(--warn)">失敗: '+(p.error||'')+'</div>';}
+      else{$('bench_status').innerHTML+='<div style="margin-top:6px;color:var(--sum)">→ 全完了。割り当てを専門家設定に反映しました</div>';}
+    }else if(m.event==='done'){
+      es.close();benchES=null;
+    }
+  };
+  es.onerror=()=>{es.close();benchES=null;};
+ }catch(e){$('bench_status').textContent='エラー: '+e;}
+}
+
+function runOne(i){
+ const t=TARGETS[i];
+ runTargets([{provider:t.provider,model:t.model}], `${t.provider}/${t.model}`);
+}
+function runSelected(){
+ const sel=TARGETS.filter(t=>t.sel).map(t=>({provider:t.provider,model:t.model}));
+ if(!sel.length){alert('1つ以上選択してください');return;}
+ if(!confirm(`選択した${sel.length}モデルをテストします。実行しますか？`))return;
+ runTargets(sel, `${sel.length}モデル`);
+}
+
+async function editQuestions(){
+ const d=await(await fetch('/api/bench_questions')).json();
+ const txt=prompt('ベンチ問題(JSON)を編集。形式: {"分野":[{"q":"問題","answer":["正解"]}]}\n分野: reason/code/security/speed',
+                  JSON.stringify(d.questions||{},null,1));
+ if(txt===null)return;
+ try{const parsed=JSON.parse(txt);
+  await fetch('/api/bench_questions_save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({questions:parsed})});
+  $('bench_status').textContent='問題を保存しました';
+ }catch(e){alert('JSON不正: '+e);}
+}
+
+// ---- 実技課題（CTF）----
+async function loadCh(){
+ const d=await(await fetch('/api/ctf_challenges')).json();
+ CH=d.challenges||[];
+ render();
+}
+function render(){
+ $('challenges').innerHTML=CH.map((c,i)=>`
+   <div class="chrow">
+     <input placeholder="課題名" value="${esc(c.name)}" onchange="upd(${i},'name',this.value)">
+     <input placeholder="対象(IP/URL)" value="${esc(c.target)}" onchange="upd(${i},'target',this.value)">
+     <input placeholder="ヒント(任意)" value="${esc(c.hint)}" onchange="upd(${i},'hint',this.value)">
+     <input placeholder="正解フラグ FLAG{...}" value="${esc(c.flag)}" onchange="upd(${i},'flag',this.value)">
+     <button class="warn" onclick="delCh(${i})">削除</button>
+   </div>`).join('')||'<div class="lbl">課題がありません。「課題を追加」から登録してください。</div>';
+}
+function upd(i,k,v){CH[i][k]=v;}
+function addChallenge(){CH.push({id:String(Date.now()),name:'',target:'',hint:'',flag:''});render();}
+
+let PRESETS=[];
+async function loadPresets(){
+ try{const d=await(await fetch('/api/ctf_presets')).json();PRESETS=d.presets||[];}catch(e){PRESETS=[];}
+ const sel=$('preset_sel');
+ sel.innerHTML='<option value="">（リストから選択）</option>'+
+   PRESETS.map((p,i)=>`<option value="${i}">${esc(p.name)}</option>`).join('');
+}
+function addPreset(){
+ const i=$('preset_sel').value;
+ if(i===''){alert('リストから選んでください');return;}
+ const p=PRESETS[i];
+ if(CH.some(c=>c.id===p.id)){alert('すでに追加済みです');return;}
+ CH.push({...p});render();
+}
+function addAllPresets(){
+ let added=0;
+ for(const p of PRESETS){ if(!CH.some(c=>c.id===p.id)){CH.push({...p});added++;} }
+ render();
+ $('ctf_status').textContent=`練習アプリの課題を${added}件追加しました`;
+}
+function delCh(i){CH.splice(i,1);render();}
+async function saveChallenges(){
+ await fetch('/api/ctf_save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({challenges:CH})});
+ $('ctf_status').textContent='課題を保存しました';
+}
+let CTF_TARGETS=[];
+function syncCtfTargets(){
+ if(!CTF_TARGETS.length && TARGETS.length){
+   CTF_TARGETS=TARGETS.map(t=>({provider:t.provider,model:t.model,sel:true}));
+ }
+ renderCtfTargets();fillCtfAddModels();
+}
+function renderCtfTargets(){
+ if(!CTF_TARGETS.length){$('ctf_targets').innerHTML='<span class="lbl">対象がありません。下で追加してください。</span>';return;}
+ $('ctf_targets').innerHTML=CTF_TARGETS.map((t,i)=>`
+   <div class="chrow">
+     <label style="flex:1"><input type="checkbox" ${t.sel?'checked':''} onchange="CTF_TARGETS[${i}].sel=this.checked">
+       <span style="font-family:var(--mono)">${t.provider} / ${t.model}</span></label>
+     <button class="go" title="このモデルだけ実技" onclick="runCtfOne(${i})">▶</button>
+     <button class="warn" onclick="CTF_TARGETS.splice(${i},1);renderCtfTargets()">✕</button>
+   </div>`).join('');
+}
+function fillCtfAddModels(){
+ const p=$('ctf_add_prov').value, models=ALLMODELS[p]||[];
+ $('ctf_add_model_sel').innerHTML='<option value="">（リストから選択）</option>'+
+   models.map(m=>`<option value="${m}">${m}</option>`).join('');
+}
+function onCtfAddSel(){const v=$('ctf_add_model_sel').value;if(v)$('ctf_add_model').value=v;}
+function addCtfTarget(){
+ const p=$('ctf_add_prov').value;
+ const m=($('ctf_add_model').value.trim())||$('ctf_add_model_sel').value;
+ if(!m){alert('モデルを選ぶか入力してください');return;}
+ CTF_TARGETS.push({provider:p,model:m,sel:true});
+ $('ctf_add_model').value='';$('ctf_add_model_sel').value='';renderCtfTargets();
+}
+let ctfES=null;
+async function runCtfTargets(targets){
+ if(!CH.length){alert('課題を登録してください');return;}
+ if(!CH.every(c=>c.flag&&c.target)){alert('全課題に対象と正解フラグが必要です');return;}
+ if(!targets.length){alert('モデルを選択してください');return;}
+ if(!confirm(`実技課題を完全自律(exploitまで)で実行します。\n対象が自分の所有する隔離環境であることを確認しましたか？\n${targets.length}モデル×${CH.length}課題を逐次実行（時間がかかります）。`))return;
+ await saveChallenges();
+ if(ctfES){ctfES.close();ctfES=null;}
+ $('ctf_status').textContent='実技実行中…侵入を試行中。';$('ctf_detail').innerHTML='';
+ $('ctf_intervene').style.display='block';$('intervene_log').innerHTML='';
+ const steps={};const prog={};const order=[];
+ function renderCtfProg(){
+   let lines=['<table><tr><th>モデル</th><th>状態</th><th>取得</th><th>平均秒</th></tr>'];
+   for(const k of order){const p=prog[k];
+     lines.push(`<tr><td>${k}</td><td>${p.state||''}</td><td>${p.solved!=null?p.solved+'/'+p.total:'-'}</td><td>${p.avg_s??'-'}</td></tr>`);}
+   lines.push('</table>');$('ctf_status').innerHTML=lines.join('');
+ }
+ function renderCtfDetail(){
+   if(!$('ctf_show_detail').checked){$('ctf_detail').innerHTML='';return;}
+   const _open=captureOpen($('ctf_detail'));   // 開いている詳細を記憶
+   let h='';
+   for(const k of order){
+     const chs=steps[k]||{};
+     h+=`<details data-dkey="ck:${esc(k)}" style="margin-bottom:8px"><summary style="cursor:pointer;font-family:var(--mono);color:var(--plan)">${k}</summary>`;
+     for(const cn in chs){
+       const st=chs[cn];
+       h+=`<details data-dkey="cc:${esc(k)}:${esc(cn)}" style="margin:4px 0 4px 12px"><summary style="cursor:pointer">${esc(cn)}（${st.length}ステップ）</summary>`;
+       for(const sp of st){
+         if(sp.note)h+=`<div class="lbl">▸ ${esc(sp.note)}</div>`;
+         if(sp.thinking)h+=`<div style="color:var(--muted);white-space:pre-wrap;margin:3px 0;padding:3px 8px;border-left:2px solid var(--fast)">💭 ${esc(sp.thinking)}</div>`;
+         if(sp.command)h+=`<div style="font-family:var(--mono);color:var(--sum)">${sp.action_type?'['+esc(sp.action_type)+'] ':''}$ ${esc(sp.command)}</div>`;
+         if(sp.reason)h+=`<div class="lbl">理由: ${esc(sp.reason)}</div>`;
+         if(sp.result)h+=`<pre style="margin:3px 0">${esc(sp.result)}</pre>`;
+         if(sp.error)h+=`<div style="color:var(--warn)">エラー: ${esc(sp.error)}</div>`;
+         if(sp.conclusion)h+=`<div style="color:var(--sum)">結論: ${esc(sp.conclusion)}</div>`;
+       }
+       h+='</details>';
+     }
+     h+='</details>';
+   }
+   $('ctf_detail').innerHTML=h;
+   restoreOpen($('ctf_detail'),_open);          // 開いていた詳細を開き直す
+ }
+ try{
+  const r=await(await fetch('/api/ctf_run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({targets})})).json();
+  if(!r.ok){$('ctf_status').textContent='失敗: '+(r.error||'');return;}
+  const es=new EventSource('/api/stream?run_id='+r.run_id);ctfES=es;
+  es.onmessage=(ev)=>{
+    let m;try{m=JSON.parse(ev.data);}catch(e){return;}
+    const p=m.payload||{};
+    if(m.event==='ctf'){
+      const e=p;const k=e.key;
+      if(e.type==='ctf_model_start'){if(!(k in prog)){prog[k]={state:'実行中…'};order.push(k);steps[k]={};}renderCtfProg();}
+      else if(e.type==='ctf_challenge_start'){if(prog[k])prog[k].state='挑戦中: '+e.challenge;renderCtfProg();}
+      else if(e.type==='ctf_step'){
+        if(!steps[k])steps[k]={};const cn=e.challenge||'(課題)';
+        if(!steps[k][cn])steps[k][cn]=[];steps[k][cn].push(e.step);renderCtfDetail();
+      }
+      else if(e.type==='ctf_challenge_done'){if(prog[k])prog[k].state=(e.success?'✓取得':'未取得')+' '+e.challenge;renderCtfProg();}
+      else if(e.type==='ctf_model_done'){if(prog[k]){prog[k].state='✓完了';prog[k].solved=e.solved;prog[k].total=e.total;}renderCtfProg();}
+    }else if(m.event==='ctf_result'){
+      if(!p.ok){$('ctf_status').innerHTML+='<div style="color:var(--warn)">失敗: '+(p.error||'')+'</div>';}
+      else{
+        let h='<table><tr><th>順位</th><th>モデル</th><th>取得率</th><th>平均秒</th></tr>';
+        (p.ranking||[]).forEach((x,i)=>{h+=`<tr><td>${i+1}</td><td>${x.model}</td><td>${Math.round(x.solve_rate*100)}%</td><td>${x.avg_s}</td></tr>`;});
+        h+='</table>';
+        const at=p.assigned_tools||{};
+        h+=Object.keys(at).length?`<div style="margin-top:6px;color:var(--sum)">→ 攻撃系ツールに <b>${Object.values(at)[0]}</b> を割り当て</div>`:'<div style="margin-top:6px">取得できたモデルなし</div>';
+        $('ctf_status').innerHTML+=h;
+      }
+    }else if(m.event==='done'){es.close();ctfES=null;$('ctf_intervene').style.display='none';}
+  };
+  es.onerror=()=>{es.close();ctfES=null;$('ctf_intervene').style.display='none';};
+ }catch(e){$('ctf_status').textContent='エラー: '+e;}
+}
+function runCtf(){syncCtfTargets();runCtfTargets(CTF_TARGETS.filter(t=>t.sel).map(t=>({provider:t.provider,model:t.model})));}
+function runCtfOne(i){const t=CTF_TARGETS[i];runCtfTargets([{provider:t.provider,model:t.model}]);}
+async function sendIntervene(){
+ const inp=$('intervene_msg');const msg=(inp.value||'').trim();
+ if(!msg)return;
+ try{
+   const r=await(await fetch('/api/intervene',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg})})).json();
+   const log=$('intervene_log');
+   if(r.ok){log.innerHTML='→ 送信: '+esc(msg)+'<br>'+log.innerHTML;inp.value='';}
+   else{log.innerHTML='<span style="color:var(--warn)">失敗: '+esc(r.error||'')+'</span><br>'+log.innerHTML;}
+ }catch(e){$('intervene_log').textContent='エラー: '+e;}
+}
+async function stopAgent(){
+ if(!confirm('実行中のエージェントを停止しますか？（現在のモデルの残り課題が中断されます）'))return;
+ try{await fetch('/api/stop_agent',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+   $('intervene_log').innerHTML='→ 停止を要求しました<br>'+$('intervene_log').innerHTML;
+ }catch(e){$('intervene_log').textContent='エラー: '+e;}
+}
+
+loadModels();
+loadCh();
+loadPresets();
+</script>
+</body></html>

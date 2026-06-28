@@ -1,0 +1,56 @@
+# === 秘密情報（絶対にコミットしない / Never commit secrets）===
+.env
+.env.*
+!.env.example
+*api_key*
+api_keys.json
+*.key
+*.pem
+secrets.json
+
+# === 実行時に生成されるファイル（Runtime-generated）===
+engagement.db
+experts.json
+tools_state.json
+session.json
+stats.db
+routes.json
+kali_tools.json
+mcp_servers.json
+bench_questions.json
+bench_results.json
+capabilities.json
+web_alert/practice.db
+web_alert/files/
+web_alert/secret_passwd.txt
+ctf_challenges.json
+installed.json
+memory/agent_memory.db
+workspace/
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# === エディタ / OS（Editor / OS）===
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# === 出力・一時ファイル（Output / temp）===
+out/
+*.log
+*.tmp
+*.db-wal
+*.db-shm
+world_state.db
+world_state.db-wal
+world_state.db-shm
